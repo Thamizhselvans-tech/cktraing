@@ -246,3 +246,263 @@
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 }
+
+/* ─── Premium Light Theme Portal Overrides ─────────────────── */
+
+/* 1. Global Portal Body & Content Background */
+.portal-body-light {
+  background-color: #f8fafc !important;
+  color: #1e293b !important;
+}
+
+.portal-body-light main {
+  background-color: #f8fafc !important;
+}
+
+/* 2. Top Header styling */
+.portal-body-light header {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+.portal-body-light header p.text-white {
+  color: #0f172a !important;
+}
+
+.portal-body-light header .text-gray-500 {
+  color: #64748b !important;
+}
+
+.portal-body-light header .btn-secondary {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+.portal-body-light header .btn-secondary:hover {
+  background-color: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+/* 3. Titles and texts inside Portal content */
+.portal-body-light h2.text-white,
+.portal-body-light h2,
+.portal-body-light h3,
+.portal-body-light h4,
+.portal-body-light .font-bold.text-white {
+  color: #0f172a !important;
+}
+
+.portal-body-light p.text-gray-400,
+.portal-body-light span.text-gray-400,
+.portal-body-light div.text-gray-400 {
+  color: #475569 !important;
+}
+
+.portal-body-light .text-gray-500,
+.portal-body-light .text-gray-300 {
+  color: #475569 !important;
+}
+
+.portal-body-light .text-white {
+  color: #0f172a !important;
+}
+
+/* 4. Glass Cards -> White Cards */
+.portal-body-light .glass-card,
+.portal-body-light .glass-card-hover {
+  background-color: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #1e293b !important;
+  backdrop-filter: none !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+.portal-body-light .glass-card-hover:hover {
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* 5. Stat Cards */
+.portal-body-light .stat-card-blue,
+.portal-body-light .stat-card-emerald,
+.portal-body-light .stat-card-purple,
+.portal-body-light .stat-card-amber,
+.portal-body-light .stat-card-rose,
+.portal-body-light .stat-card-cyan {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #1e293b !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05) !important;
+}
+
+.portal-body-light .stat-card-blue h3,
+.portal-body-light .stat-card-blue .text-white { color: #1e40af !important; }
+.portal-body-light .stat-card-blue .p-3 { background-color: #eff6ff !important; color: #1d4ed8 !important; }
+
+.portal-body-light .stat-card-emerald h3,
+.portal-body-light .stat-card-emerald .text-white { color: #065f46 !important; }
+.portal-body-light .stat-card-emerald .p-3 { background-color: #ecfdf5 !important; color: #047857 !important; }
+
+.portal-body-light .stat-card-purple h3,
+.portal-body-light .stat-card-purple .text-white { color: #5b21b6 !important; }
+.portal-body-light .stat-card-purple .p-3 { background-color: #f5f3ff !important; color: #6d28d9 !important; }
+
+.portal-body-light .stat-card-amber h3,
+.portal-body-light .stat-card-amber .text-white { color: #92400e !important; }
+.portal-body-light .stat-card-amber .p-3 { background-color: #fffbeb !important; color: #b45309 !important; }
+
+.portal-body-light .stat-card-rose h3,
+.portal-body-light .stat-card-rose .text-white { color: #9f1239 !important; }
+.portal-body-light .stat-card-rose .p-3 { background-color: #fff1f2 !important; color: #be123c !important; }
+
+.portal-body-light .stat-card-cyan h3,
+.portal-body-light .stat-card-cyan .text-white { color: #0e7490 !important; }
+.portal-body-light .stat-card-cyan .p-3 { background-color: #ecfeff !important; color: #0891b2 !important; }
+
+/* 6. Form Fields & Dropdowns */
+.portal-body-light .input-field {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+.portal-body-light .input-field:focus {
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
+}
+
+.portal-body-light .input-label {
+  color: #475569 !important;
+}
+
+/* 7. Data Table */
+.portal-body-light .data-table thead tr {
+  background-color: #f8fafc !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.portal-body-light .data-table thead th {
+  color: #475569 !important;
+}
+
+.portal-body-light .data-table tbody tr {
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+.portal-body-light .data-table tbody tr:hover {
+  background-color: #f8fafc !important;
+}
+
+.portal-body-light .data-table tbody td {
+  color: #334155 !important;
+}
+
+/* 8. Modals & Dialog Boxes */
+.portal-body-light .modal-box {
+  background-color: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* 9. Calendar / Scheduler & Admin Timetable Tabs override */
+.portal-body-light .border-white\/10 {
+  border-color: #e2e8f0 !important;
+}
+
+.portal-body-light .bg-dark-800\/40 {
+  background-color: #f1f5f9 !important;
+}
+
+.portal-body-light .text-primary-400 {
+  color: #4f46e5 !important;
+}
+
+/* 10. Sidebar Custom Styling (Dark blue background with white active text) */
+.portal-sidebar {
+  background-color: #0b1329 !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.portal-sidebar .sidebar-link {
+  color: #94a3b8 !important;
+}
+
+.portal-sidebar .sidebar-link:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+/* Admin and Student active link (purple) */
+.portal-sidebar .sidebar-link.active {
+  background: #6366f1 !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3) !important;
+}
+
+/* Coordinator active link (teal) */
+.coordinator-layout .portal-sidebar .sidebar-link.active {
+  background: #0d9488 !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3) !important;
+}
+
+/* User Card in Sidebar */
+.portal-sidebar .glass-card {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+  box-shadow: none !important;
+}
+
+.portal-sidebar .glass-card p.text-white {
+  color: #ffffff !important;
+}
+
+/* 11. Custom fixes for specific elements */
+.portal-body-light .btn-secondary {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+.portal-body-light .btn-secondary:hover {
+  background-color: #f8fafc !important;
+}
+
+.portal-body-light hr {
+  border-color: #e2e8f0 !important;
+}
+
+.portal-body-light .bg-white\/10 {
+  background-color: #f1f5f9 !important;
+  color: #4f46e5 !important;
+}
+
+.portal-body-light .star-empty {
+  color: #cbd5e1 !important;
+}
+
+.portal-body-light .star-filled {
+  color: #f59e0b !important;
+}
+
+/* Button text color protection */
+.portal-body-light .btn-primary,
+.portal-body-light .btn-primary *,
+.portal-body-light .btn-success,
+.portal-body-light .btn-success *,
+.portal-body-light .btn-danger,
+.portal-body-light .btn-danger * {
+  color: #ffffff !important;
+}
+
+/* Badges overrides */
+.portal-body-light .badge-blue { color: #2563eb !important; background-color: #eff6ff !important; border-color: #bfdbfe !important; }
+.portal-body-light .badge-emerald { color: #059669 !important; background-color: #ecfdf5 !important; border-color: #a7f3d0 !important; }
+.portal-body-light .badge-amber { color: #d97706 !important; background-color: #fffbeb !important; border-color: #fde68a !important; }
+.portal-body-light .badge-rose { color: #e11d48 !important; background-color: #fff1f2 !important; border-color: #fecdd3 !important; }
+.portal-body-light .badge-purple { color: #7c3aed !important; background-color: #f5f3ff !important; border-color: #ddd6fe !important; }
+.portal-body-light .badge-gray { color: #4b5563 !important; background-color: #f3f4f6 !important; border-color: #e5e7eb !important; }
+

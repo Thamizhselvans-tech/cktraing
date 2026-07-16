@@ -1,5 +1,9 @@
 const Student = require('../models/Student.model');
 const Department = require('../models/Department.model');
+const UploadedFile = require('../models/UploadedFile.model');
+const Attendance = require('../models/Attendance.model');
+const Marks = require('../models/Marks.model');
+const StudentFeedback = require('../models/StudentFeedback.model');
 const catchAsync = require('../utils/catchAsync');
 const { sendSuccess, sendError, sendPaginated } = require('../utils/apiResponse');
 const { createAuditLog, getPagination } = require('../utils/helpers');
@@ -99,7 +103,7 @@ exports.createStudent = catchAsync(async (req, res) => {
     registerNumber,
     name,
     email,
-    password: dept.code.toUpperCase(), // Default password = department code
+    password: dept.code.toUpperCase() + registerNumber.trim().toUpperCase(), // Default password = Department Code + Register Number
     mustChangePassword: true,
     department,
     year,
@@ -329,12 +333,12 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
       if (row.batch) existingStudent.batch = String(row.batch).trim();
       if (row.phone) existingStudent.phone = String(row.phone).trim();
 
-      // If student hasn't changed their password yet, reset it to the department code (so they can log in)
+      // If student hasn't changed their password yet, reset it to Department Code + Register Number
       if (existingStudent.mustChangePassword) {
         const regNoUpper = regNo.toUpperCase();
         const match = regNoUpper.match(/\d+([A-Z]+)\d+/);
         const deptCode = match ? match[1] : (deptCodeMap[deptId.toString()] || 'CSE');
-        existingStudent.password = deptCode; // Handled by pre-save hook
+        existingStudent.password = deptCode.toUpperCase() + regNoUpper; // Handled by pre-save hook
       }
 
       await existingStudent.save();
@@ -346,7 +350,8 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
     const regNoUpper = regNo.toUpperCase();
     const match = regNoUpper.match(/\d+([A-Z]+)\d+/);
     const deptCode = match ? match[1] : (deptCodeMap[deptId.toString()] || 'CSE');
-    const hashedPassword = await bcrypt.hash(deptCode, 12);
+    const defaultPassword = deptCode.toUpperCase() + regNoUpper;
+    const hashedPassword = await bcrypt.hash(defaultPassword, 12);
     studentsToInsert.push({
       registerNumber: regNo,
       name,
@@ -369,7 +374,6 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
       results.success += bulkSuccessCount;
     } catch (err) {
       // With ordered: false, some might succeed and some fail.
-      // In this case, we check how many actually got inserted or just count how many we had
       results.failed += studentsToInsert.length;
       results.errors.push({ row: 'bulk', reason: `Bulk insert error: ${err.message}` });
     }
@@ -377,14 +381,85 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
 
   results.failed = normalizedRows.length - results.success - results.skipped;
 
+  // Retrieve IDs of all imported / updated students for this file
+  const allRegNos = normalizedRows.map(r => r.registerNumber).filter(Boolean);
+  const dbStudents = await Student.find({ registerNumber: { $in: allRegNos } }, '_id');
+  const importedStudentIds = dbStudents.map(s => s._id);
+
+  // Save the uploaded file metadata and buffer to the database
+  const uploadedFile = await UploadedFile.create({
+    fileName: `student_import_${Date.now()}_${req.file.originalname}`,
+    originalName: req.file.originalname || 'import.xlsx',
+    fileData: req.file.buffer,
+    mimeType: req.file.mimetype,
+    size: req.file.size,
+    studentIds: importedStudentIds,
+    uploadedBy: req.user.id,
+  });
+
   await createAuditLog({
     action: AUDIT_ACTIONS.UPLOAD,
     entity: AUDIT_ENTITIES.STUDENT,
-    entityId: null,
+    entityId: uploadedFile._id,
     performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
     ipAddress: req.ip,
-    description: `Excel upload: ${results.success} created/updated, ${results.skipped} skipped, ${results.failed} failed`,
+    description: `Excel upload: '${uploadedFile.originalName}' (${results.success} created/updated, ${results.skipped} skipped, ${results.failed} failed)`,
   });
 
   return sendSuccess(res, 200, 'Excel upload completed', results);
+});
+
+// GET all uploaded student Excel files
+exports.getUploadedFiles = catchAsync(async (req, res) => {
+  const { page: p, limit: l, skip } = getPagination(req.query);
+  const [files, total] = await Promise.all([
+    UploadedFile.find()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(l)
+      .populate('uploadedBy', 'name')
+      .select('-fileData'), // Don't return the file buffer to save bandwidth
+    UploadedFile.countDocuments(),
+  ]);
+
+  return sendPaginated(res, 'Uploaded files fetched', files, p, l, total);
+});
+
+// DELETE an uploaded student Excel file record (and optionally its imported students)
+exports.deleteUploadedFile = catchAsync(async (req, res) => {
+  const { deleteStudents } = req.query; // 'true' or 'false'
+  const file = await UploadedFile.findById(req.params.id);
+  if (!file) return sendError(res, 404, 'Uploaded file record not found.');
+
+  if (deleteStudents === 'true' && file.studentIds && file.studentIds.length > 0) {
+    // Hard delete all students imported by this file
+    await Student.deleteMany({ _id: { $in: file.studentIds } });
+
+    // Cascading delete student associated records
+    await Attendance.deleteMany({ student: { $in: file.studentIds } });
+    await Marks.deleteMany({ student: { $in: file.studentIds } });
+    await StudentFeedback.deleteMany({ student: { $in: file.studentIds } });
+
+    await createAuditLog({
+      action: AUDIT_ACTIONS.DELETE,
+      entity: AUDIT_ENTITIES.STUDENT,
+      entityId: null,
+      performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
+      ipAddress: req.ip,
+      description: `Deleted ${file.studentIds.length} students imported from file '${file.originalName}'`,
+    });
+  }
+
+  await file.deleteOne();
+
+  await createAuditLog({
+    action: 'DELETE',
+    entity: 'UploadedFile',
+    entityId: file._id,
+    performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
+    ipAddress: req.ip,
+    description: `Deleted uploaded file record: '${file.originalName}' (imported students deleted: ${deleteStudents})`,
+  });
+
+  return sendSuccess(res, 200, 'Uploaded file record deleted successfully.');
 });

@@ -40,7 +40,7 @@ export default function StudentLayout({ children }) {
   };
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-dark-900 border-r border-white/5 portal-sidebar">
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-white/10">
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-rose-600 flex items-center justify-center flex-shrink-0">
@@ -99,7 +99,7 @@ export default function StudentLayout({ children }) {
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-dark-900">
+    <div className="flex h-screen overflow-hidden bg-dark-900 student-layout">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 flex-shrink-0 bg-dark-800/80 backdrop-blur-md border-r border-white/10">
         <SidebarContent />
@@ -136,7 +136,7 @@ export default function StudentLayout({ children }) {
       </AnimatePresence>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden portal-body-light">
         {/* Top Navbar */}
         <header className="flex items-center justify-between h-16 px-6 bg-dark-800/60 backdrop-blur-md border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-3">

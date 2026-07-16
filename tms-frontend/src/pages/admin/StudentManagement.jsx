@@ -11,11 +11,13 @@ import {
   createStudent,
   updateStudent,
   deleteStudent,
-  uploadStudentsExcel
+  uploadStudentsExcel,
+  getUploadedFiles,
+  deleteUploadedFile
 } from '../../api/students.api';
 import { getDepartments } from '../../api/departments.api';
 import { resetStudentPassword } from '../../api/auth.api';
-import { Plus, Edit2, Trash2, Key, Upload, FileSpreadsheet, XCircle, CheckCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Key, Upload, FileSpreadsheet, XCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function StudentManagement() {
@@ -46,6 +48,19 @@ export default function StudentManagement() {
   const [excelFile, setExcelFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState(null);
+
+  // Sub Tab and Uploaded Files list
+  const [activeSubTab, setActiveSubTab] = useState('database'); // 'database' or 'files'
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesPage, setFilesPage] = useState(1);
+  const [filesTotalPages, setFilesTotalPages] = useState(1);
+
+  // File Delete Dialog States
+  const [fileDeleteOpen, setFileDeleteOpen] = useState(false);
+  const [fileDeleteId, setFileDeleteId] = useState(null);
+  const [deleteStudentsCheck, setDeleteStudentsCheck] = useState(false);
+  const [fileDeleting, setFileDeleting] = useState(false);
 
   // Dialogs
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -182,6 +197,27 @@ export default function StudentManagement() {
     }
   };
 
+  const fetchUploadedFiles = useCallback(async () => {
+    setFilesLoading(true);
+    try {
+      const { data } = await getUploadedFiles({ page: filesPage, limit: 10 });
+      if (data.success) {
+        setUploadedFiles(data.data);
+        setFilesTotalPages(data.pagination.totalPages);
+      }
+    } catch {
+      toast.error('Failed to load uploaded files list');
+    } finally {
+      setFilesLoading(false);
+    }
+  }, [filesPage]);
+
+  useEffect(() => {
+    if (activeSubTab === 'files') {
+      fetchUploadedFiles();
+    }
+  }, [activeSubTab, fetchUploadedFiles]);
+
   const handleExcelUploadSubmit = async (e) => {
     e.preventDefault();
     if (!excelFile) return toast.error('Please select an Excel file');
@@ -196,11 +232,37 @@ export default function StudentManagement() {
         setUploadResult(data.data);
         toast.success('Excel upload complete');
         fetchStudents();
+        fetchUploadedFiles();
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Upload failed');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleOpenDeleteFile = (id) => {
+    setFileDeleteId(id);
+    setDeleteStudentsCheck(false);
+    setFileDeleteOpen(true);
+  };
+
+  const handleConfirmDeleteFile = async () => {
+    setFileDeleting(true);
+    try {
+      const res = await deleteUploadedFile(fileDeleteId, deleteStudentsCheck);
+      if (res.data.success) {
+        toast.success(res.data.message || 'File record deleted successfully');
+        setFileDeleteOpen(false);
+        fetchUploadedFiles();
+        if (deleteStudentsCheck) {
+          fetchStudents();
+        }
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete file');
+    } finally {
+      setFileDeleting(false);
     }
   };
 
@@ -249,6 +311,28 @@ export default function StudentManagement() {
     },
   ];
 
+  const fileColumns = [
+    { key: 'originalName', label: 'File Name', className: 'font-semibold text-slate-800' },
+    { key: 'size', label: 'File Size', render: (row) => row.size ? `${(row.size / 1024).toFixed(2)} KB` : '-' },
+    { key: 'studentIds', label: 'Imported Students', render: (row) => <Badge text={`${row.studentIds?.length || 0} Students`} type="info" /> },
+    { key: 'uploadedBy', label: 'Uploaded By', render: (row) => row.uploadedBy?.name || 'Admin' },
+    { key: 'createdAt', label: 'Upload Date', render: (row) => row.createdAt ? new Date(row.createdAt).toLocaleString('en-IN') : '-' },
+    {
+      key: 'actions',
+      label: 'Actions',
+      className: 'w-20 text-right',
+      render: (row) => (
+        <button
+          onClick={() => handleOpenDeleteFile(row._id)}
+          className="btn-icon text-rose-500 hover:bg-rose-500/10"
+          title="Delete Uploaded File"
+        >
+          <Trash2 size={14} />
+        </button>
+      )
+    }
+  ];
+
   return (
     <AdminLayout>
       <PageHeader
@@ -268,43 +352,77 @@ export default function StudentManagement() {
         }
       />
 
-      {/* Filter and Search */}
-      <div className="mb-6 grid grid-cols-1 sm:grid-cols-4 gap-4 items-center">
-        <div className="sm:col-span-2">
-          <SearchBar value={search} onChange={(val) => { setSearch(val); setPage(1); }} placeholder="Search name/reg no..." />
-        </div>
-        <select
-          value={selectedDept}
-          onChange={(e) => { setSelectedDept(e.target.value); setPage(1); }}
-          className="select-field"
+      {/* Sub Tabs switcher */}
+      <div className="flex border-b border-slate-200 mb-6 bg-slate-100 p-1 rounded-xl max-w-sm">
+        <button
+          onClick={() => setActiveSubTab('database')}
+          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold uppercase transition-all ${
+            activeSubTab === 'database' ? 'bg-primary-600 text-white shadow-glow-blue' : 'text-slate-600 hover:text-slate-900'
+          }`}
         >
-          <option value="">All Departments</option>
-          {departments.map((d) => (
-            <option key={d._id} value={d._id}>{d.name} ({d.code})</option>
-          ))}
-        </select>
-        <select
-          value={selectedYear}
-          onChange={(e) => { setSelectedYear(e.target.value); setPage(1); }}
-          className="select-field"
+          Students Database
+        </button>
+        <button
+          onClick={() => setActiveSubTab('files')}
+          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold uppercase transition-all ${
+            activeSubTab === 'files' ? 'bg-primary-600 text-white shadow-glow-blue' : 'text-slate-600 hover:text-slate-900'
+          }`}
         >
-          <option value="">All Years</option>
-          <option value="1">1st Year</option>
-          <option value="2">2nd Year</option>
-          <option value="3">3rd Year</option>
-          <option value="4">4th Year</option>
-        </select>
+          Uploaded Import Files
+        </button>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={students}
-        loading={loading}
-        emptyMessage="No students found."
-        page={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
-      />
+      {activeSubTab === 'database' ? (
+        <>
+          {/* Filter and Search */}
+          <div className="mb-6 grid grid-cols-1 sm:grid-cols-4 gap-4 items-center">
+            <div className="sm:col-span-2">
+              <SearchBar value={search} onChange={(val) => { setSearch(val); setPage(1); }} placeholder="Search name/reg no..." />
+            </div>
+            <select
+              value={selectedDept}
+              onChange={(e) => { setSelectedDept(e.target.value); setPage(1); }}
+              className="select-field"
+            >
+              <option value="">All Departments</option>
+              {departments.map((d) => (
+                <option key={d._id} value={d._id}>{d.name} ({d.code})</option>
+              ))}
+            </select>
+            <select
+              value={selectedYear}
+              onChange={(e) => { setSelectedYear(e.target.value); setPage(1); }}
+              className="select-field"
+            >
+              <option value="">All Years</option>
+              <option value="1">1st Year</option>
+              <option value="2">2nd Year</option>
+              <option value="3">3rd Year</option>
+              <option value="4">4th Year</option>
+            </select>
+          </div>
+
+          <DataTable
+            columns={columns}
+            data={students}
+            loading={loading}
+            emptyMessage="No students found."
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
+        </>
+      ) : (
+        <DataTable
+          columns={fileColumns}
+          data={uploadedFiles}
+          loading={filesLoading}
+          emptyMessage="No Excel files uploaded yet."
+          page={filesPage}
+          totalPages={filesTotalPages}
+          onPageChange={setFilesPage}
+        />
+      )}
 
       {/* Form Modal */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editId ? 'Edit Student Details' : 'Add New Student'}>
@@ -529,6 +647,45 @@ export default function StudentManagement() {
         type="danger"
         loading={deleting}
       />
+      {/* Delete Uploaded File Confirmation Modal */}
+      <Modal isOpen={fileDeleteOpen} onClose={() => setFileDeleteOpen(false)} title="Delete Uploaded File Record?" size="sm">
+        <div className="flex flex-col items-center text-center p-4 space-y-4">
+          <div className="p-3 rounded-full bg-rose-500/10 text-rose-500">
+            <AlertTriangle size={32} />
+          </div>
+          <p className="text-slate-700 text-sm">
+            Are you sure you want to delete this Excel file record from the system?
+          </p>
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3 w-full text-left">
+            <input
+              type="checkbox"
+              id="deleteStudentsCheck"
+              checked={deleteStudentsCheck}
+              onChange={(e) => setDeleteStudentsCheck(e.target.checked)}
+              className="w-4 h-4 text-primary-600 border-slate-300 rounded focus:ring-primary-500 cursor-pointer"
+            />
+            <label htmlFor="deleteStudentsCheck" className="text-xs text-slate-700 font-medium cursor-pointer select-none">
+              Also delete all student records imported by this file
+            </label>
+          </div>
+          <div className="flex items-center gap-3 w-full pt-4">
+            <button
+              onClick={() => setFileDeleteOpen(false)}
+              disabled={fileDeleting}
+              className="btn-secondary flex-1"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmDeleteFile}
+              disabled={fileDeleting}
+              className="btn-danger flex-1"
+            >
+              {fileDeleting ? 'Deleting...' : 'Delete File'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </AdminLayout>
   );
 }

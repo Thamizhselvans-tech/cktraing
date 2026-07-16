@@ -8,3 +8,5 @@ export const updateStudent = (id, data) => api.put(`/students/${id}`, data);
 export const deleteStudent = (id) => api.delete(`/students/${id}`);
 export const uploadStudentsExcel = (formData) =>
   api.post('/students/upload-excel', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+export const getUploadedFiles = (params) => api.get('/students/excel/files', { params });
+export const deleteUploadedFile = (id, deleteStudents = false) => api.delete(`/students/excel/files/${id}`, { params: { deleteStudents } });

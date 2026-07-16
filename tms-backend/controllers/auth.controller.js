@@ -230,9 +230,11 @@ exports.resetStudentPassword = catchAsync(async (req, res) => {
   const student = await Student.findById(studentId).populate('department');
   if (!student) return sendError(res, 404, 'Student not found.');
 
-  // Reset password to department code (e.g. CSE)
+  // Reset password to Department Code + Register Number
   const deptCode = student.department?.code?.toUpperCase() || 'CSE';
-  student.password = deptCode;
+  const regNo = student.registerNumber.toUpperCase();
+  const defaultPassword = deptCode + regNo;
+  student.password = defaultPassword;
   student.mustChangePassword = true;
   await student.save();
 
@@ -242,10 +244,10 @@ exports.resetStudentPassword = catchAsync(async (req, res) => {
     entityId: student._id,
     performedBy: { _id: admin.id, name: admin.name, role: ROLES.ADMIN },
     ipAddress: req.ip,
-    description: `Admin reset password for student '${student.registerNumber}'. Temporary password set to department code: ${deptCode}.`,
+    description: `Admin reset password for student '${student.registerNumber}'. Temporary password set to: ${defaultPassword}.`,
   });
 
-  return sendSuccess(res, 200, `Password for ${student.name} has been reset to their department code: ${deptCode}. They will be prompted to change it on next login.`);
+  return sendSuccess(res, 200, `Password for ${student.name} has been reset to: ${defaultPassword}. They will be prompted to change it on next login.`);
 });
 
 // GET debug students status

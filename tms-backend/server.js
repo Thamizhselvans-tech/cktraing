@@ -43,12 +43,13 @@ connectDB().then(async () => {
         modified = true;
       }
 
-      // 2. Sync password to extracted department code from Register Number (e.g. CSE)
+      // 2. Sync password to Department Code + Register Number (e.g. CSE22CSE001)
       if (student.mustChangePassword) {
-        const deptCode = extractedCode; // e.g. CSE
-        const isCorrect = await bcrypt.compare(deptCode, student.password);
+        const deptCode = extractedCode.toUpperCase(); // e.g. CSE
+        const defaultPassword = deptCode + regNo; // e.g. CSE22CSE001
+        const isCorrect = await bcrypt.compare(defaultPassword, student.password);
         if (!isCorrect) {
-          student.password = deptCode; // will be hashed by pre-save
+          student.password = defaultPassword; // will be hashed by pre-save
           modified = true;
         }
       }
@@ -92,6 +93,27 @@ connectDB().then(async () => {
     }
     if (coordinatorSyncCount > 0) {
       console.log(`[Coordinator Sync] Synced ${coordinatorSyncCount} coordinator accounts.`);
+    }
+
+    // Auto-clean orphaned records (where student has been deleted)
+    const Attendance = require('./models/Attendance.model');
+    const Marks = require('./models/Marks.model');
+    const StudentFeedback = require('./models/StudentFeedback.model');
+    const allStudentIds = (await Student.find({}, '_id')).map(s => s._id);
+
+    const attResult = await Attendance.deleteMany({ student: { $nin: allStudentIds } });
+    if (attResult.deletedCount > 0) {
+      console.log(`[Database Cleanup] Deleted ${attResult.deletedCount} orphaned attendance records.`);
+    }
+
+    const marksResult = await Marks.deleteMany({ student: { $nin: allStudentIds } });
+    if (marksResult.deletedCount > 0) {
+      console.log(`[Database Cleanup] Deleted ${marksResult.deletedCount} orphaned marks records.`);
+    }
+
+    const fbResult = await StudentFeedback.deleteMany({ student: { $nin: allStudentIds } });
+    if (fbResult.deletedCount > 0) {
+      console.log(`[Database Cleanup] Deleted ${fbResult.deletedCount} orphaned feedback records.`);
     }
   } catch (err) {
     console.error('❌ Startup migrations failed:', err);
