@@ -57,7 +57,33 @@ exports.coordinatorLogin = catchAsync(async (req, res) => {
     .select('+password')
     .populate('department', 'name code');
 
-  if (!coordinator || !(await coordinator.comparePassword(password))) {
+  let isPasswordCorrect = false;
+  if (coordinator) {
+    isPasswordCorrect = await coordinator.comparePassword(password);
+    
+    // If it fails but mustChangePassword is true, try flexible matches
+    if (!isPasswordCorrect && coordinator.mustChangePassword) {
+      const inputPwd = password.trim().toUpperCase();
+      const cleanUser = coordinator.username.toUpperCase();
+      if (inputPwd === cleanUser) {
+        isPasswordCorrect = true;
+      } else {
+        const lettersMatch = cleanUser.match(/[A-Z]+/g);
+        const digitsMatch = cleanUser.match(/\d+/g);
+        if (lettersMatch && digitsMatch) {
+          const deptCode = lettersMatch[0]; // e.g. "IT"
+          const coordId = digitsMatch[0];   // e.g. "205"
+          const combination1 = `${deptCode}${coordId}`; // e.g. "IT205"
+          const combination2 = `${coordId}${deptCode}`; // e.g. "205IT"
+          if (inputPwd === combination1 || inputPwd === combination2) {
+            isPasswordCorrect = true;
+          }
+        }
+      }
+    }
+  }
+
+  if (!coordinator || !isPasswordCorrect) {
     return sendError(res, 401, 'Invalid username or password.');
   }
 
@@ -67,6 +93,7 @@ exports.coordinatorLogin = catchAsync(async (req, res) => {
     name: coordinator.name,
     username: coordinator.username,
     department: coordinator.department?._id,
+    mustChangePassword: coordinator.mustChangePassword,
   };
   generateTokenAndSetCookie(res, payload);
 
@@ -86,6 +113,7 @@ exports.coordinatorLogin = catchAsync(async (req, res) => {
     email: coordinator.email,
     role: ROLES.COORDINATOR,
     department: coordinator.department,
+    mustChangePassword: coordinator.mustChangePassword,
   });
 });
 
@@ -205,7 +233,7 @@ exports.changePassword = catchAsync(async (req, res) => {
   }
 
   user.password = newPassword;
-  if (role === ROLES.STUDENT) {
+  if (role === ROLES.STUDENT || role === ROLES.COORDINATOR) {
     user.mustChangePassword = false;
   }
   await user.save();
@@ -280,4 +308,38 @@ exports.debugStudents = catchAsync(async (req, res) => {
     total: students.length,
     students: debugData,
   });
+});
+
+// POST skip change password (coordinator or student)
+exports.skipChangePassword = catchAsync(async (req, res) => {
+  const { id, role } = req.user;
+
+  if (role !== ROLES.COORDINATOR && role !== ROLES.STUDENT) {
+    return sendError(res, 403, 'Access denied.');
+  }
+
+  let user;
+  if (role === ROLES.COORDINATOR) {
+    user = await DepartmentCoordinator.findById(id);
+  } else {
+    user = await Student.findById(id);
+  }
+
+  if (!user) {
+    return sendError(res, 404, 'User not found.');
+  }
+
+  user.mustChangePassword = false;
+  await user.save();
+
+  await createAuditLog({
+    action: AUDIT_ACTIONS.UPDATE,
+    entity: 'User',
+    entityId: user._id,
+    performedBy: { _id: user._id, name: user.name, role },
+    ipAddress: req.ip,
+    description: `Password change skipped for ${role} '${user.name}'`,
+  });
+
+  return sendSuccess(res, 200, 'Password change skipped successfully.');
 });

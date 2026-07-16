@@ -24,7 +24,11 @@ export default function CoordinatorLogin() {
       if (data.success) {
         login(data.data);
         toast.success(data.message || 'Login successful!');
-        navigate('/coordinator/dashboard');
+        if (data.data.mustChangePassword) {
+          navigate('/coordinator/change-password');
+        } else {
+          navigate('/coordinator/dashboard');
+        }
       } else {
         toast.error(data.message || 'Invalid credentials');
       }

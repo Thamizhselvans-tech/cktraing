@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, ClipboardCheck, BookOpen, Users, Calendar,
-  LogOut, Menu, X, ChevronRight, GraduationCap,
+  LogOut, Menu, X, ChevronRight, GraduationCap, Settings,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { to: '/coordinator/marks',              label: 'Marks Entry',      icon: BookOpen },
   { to: '/coordinator/students',           label: 'Student List',     icon: Users },
   { to: '/coordinator/schedule',           label: 'Training Schedule',icon: Calendar },
+  { to: '/coordinator/change-password',    label: 'Change Password',  icon: Settings },
 ];
 
 const sidebarVariants = {

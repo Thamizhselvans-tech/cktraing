@@ -10,6 +10,7 @@ router.post('/student/login', authController.studentLogin);
 router.post('/logout', protect, authController.logout);
 router.get('/me', protect, authController.getMe);
 router.post('/change-password', protect, authController.changePassword);
+router.post('/skip-change-password', protect, authController.skipChangePassword);
 router.post('/reset-password/:studentId', protect, adminOnly, authController.resetStudentPassword);
 router.get('/debug-students', authController.debugStudents);
 

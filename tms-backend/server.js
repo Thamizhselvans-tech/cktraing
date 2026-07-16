@@ -68,22 +68,63 @@ connectDB().then(async () => {
     const depts = await Department.find({ status: 'Active' });
     let coordinatorSyncCount = 0;
     for (const dept of depts) {
-      const codeUpper = dept.code.toUpperCase();
+      const deptCodeUpper = dept.code.toUpperCase();
       const codeLower = dept.code.toLowerCase();
-      const defaultPassword = `${codeLower}@0911`; // e.g. cse@0911
 
-      let coordinator = await DepartmentCoordinator.findOne({ username: codeUpper });
+      // Determine deptCode (e.g. cse) and coordId (e.g. 104) based on name and code
+      const cleanName = dept.name.toUpperCase();
+      let deptCode = dept.code.toLowerCase();
+      let coordId = deptCodeUpper;
+      if (cleanName.includes('CSE') || deptCodeUpper === '104' || deptCode === 'cse') {
+        coordId = '104';
+        deptCode = 'cse';
+      } else if (cleanName.includes('AIDS') || cleanName.includes('ARTIFICIAL') || deptCodeUpper === '105' || deptCode === 'aids') {
+        coordId = '105';
+        deptCode = 'aids';
+      } else if (cleanName.includes('IT') || cleanName.includes('INFORMATION') || deptCodeUpper === '205' || deptCode === 'it') {
+        coordId = '205';
+        deptCode = 'it';
+      }
+
+      const generatedUsername = `${coordId.toLowerCase()}${deptCode}`.toUpperCase();
+      const defaultPassword = `${coordId.toLowerCase()}${deptCode}`; // e.g. 104cse
+
+      let coordinator = await DepartmentCoordinator.findOne({ username: generatedUsername });
       if (!coordinator) {
-        coordinator = await DepartmentCoordinator.create({
-          username: codeUpper,
-          password: defaultPassword, // hashed automatically by pre-save hook
-          name: `${dept.name} Coordinator`,
-          email: `coordinator.${codeLower}@tms.edu`,
-          department: dept._id,
-          status: 'Active'
-        });
-        coordinatorSyncCount++;
+        // Also look for older format to migrate it
+        const oldCoord = await DepartmentCoordinator.findOne({ username: { $regex: new RegExp(`^${deptCodeUpper}$`, 'i') } });
+        if (oldCoord) {
+          oldCoord.username = generatedUsername;
+          oldCoord.password = defaultPassword; // Will be hashed by pre-save hook
+          oldCoord.mustChangePassword = true;
+          await oldCoord.save();
+          coordinatorSyncCount++;
+        } else {
+          coordinator = await DepartmentCoordinator.create({
+            username: generatedUsername,
+            password: defaultPassword, // hashed automatically by pre-save hook
+            name: `${dept.name} Coordinator`,
+            email: `coordinator.${codeLower}@tms.edu`,
+            department: dept._id,
+            status: 'Active',
+            mustChangePassword: true,
+          });
+          coordinatorSyncCount++;
+        }
       } else {
+        // If they haven't changed password, verify it is set to defaultPassword
+        if (coordinator.mustChangePassword) {
+          // Select coordinator with password to compare
+          const coordWithPwd = await DepartmentCoordinator.findById(coordinator._id).select('+password');
+          if (coordWithPwd) {
+            const isCorrect = await bcrypt.compare(defaultPassword, coordWithPwd.password);
+            if (!isCorrect) {
+              coordWithPwd.password = defaultPassword;
+              await coordWithPwd.save();
+              coordinatorSyncCount++;
+            }
+          }
+        }
         if (coordinator.department?.toString() !== dept._id.toString()) {
           coordinator.department = dept._id;
           await coordinator.save();

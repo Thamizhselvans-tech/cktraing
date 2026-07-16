@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, User, Calendar, Building, CheckSquare, Award,
-  MessageSquare, History, LogOut, Menu, X, ChevronRight, GraduationCap,
+  MessageSquare, History, LogOut, Menu, X, ChevronRight, GraduationCap, Settings,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -17,6 +17,7 @@ const NAV_LINKS = [
   { to: '/student/marks',               label: 'Marks',             icon: Award },
   { to: '/student/feedback',            label: 'Submit Feedback',   icon: MessageSquare },
   { to: '/student/feedback/history',    label: 'Feedback History',  icon: History },
+  { to: '/student/change-password',     label: 'Change Password',   icon: Settings },
 ];
 
 const sidebarVariants = {

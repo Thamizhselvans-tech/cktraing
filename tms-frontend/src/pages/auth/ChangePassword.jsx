@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { KeyRound, ShieldAlert, Check } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { changePassword } from '../../api/auth.api';
+import { changePassword, skipChangePassword } from '../../api/auth.api';
 import toast from 'react-hot-toast';
 
 export default function ChangePassword() {
@@ -49,6 +49,26 @@ export default function ChangePassword() {
     }
   };
 
+  const handleSkip = async () => {
+    setLoading(true);
+    try {
+      const { data } = await skipChangePassword();
+      if (data.success) {
+        toast.success('Password change skipped.');
+        updateUser({ mustChangePassword: false });
+        if (user?.role === 'coordinator') {
+          navigate('/coordinator/dashboard');
+        } else {
+          navigate('/student/dashboard');
+        }
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to skip password change.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-dark-900 relative">
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-primary-500/5 rounded-full blur-3xl" />
@@ -59,13 +79,27 @@ export default function ChangePassword() {
         transition={{ duration: 0.4 }}
       >
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4 shadow-glow-amber">
-            <ShieldAlert size={24} />
-          </div>
-          <h3 className="text-xl font-display font-bold text-white">Change Password Required</h3>
-          <p className="text-gray-400 text-xs mt-2 max-w-xs leading-relaxed">
-            For security reasons, you must change your initial temporary password before continuing to your portal.
-          </p>
+          {user?.mustChangePassword ? (
+            <>
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4 shadow-glow-amber">
+                <ShieldAlert size={24} />
+              </div>
+              <h3 className="text-xl font-display font-bold text-white">Change Password Required</h3>
+              <p className="text-gray-400 text-xs mt-2 max-w-xs leading-relaxed">
+                For security reasons, you must change your initial temporary password before continuing to your portal.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="w-12 h-12 rounded-2xl bg-primary-500/10 text-primary-500 flex items-center justify-center mb-4 shadow-glow">
+                <KeyRound size={24} />
+              </div>
+              <h3 className="text-xl font-display font-bold text-white">Update Account Password</h3>
+              <p className="text-gray-400 text-xs mt-2 max-w-xs leading-relaxed">
+                Update your account password below to keep your account secure.
+              </p>
+            </>
+          )}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -127,6 +161,28 @@ export default function ChangePassword() {
           >
             {loading ? 'Updating Password...' : 'Update Password & Continue'}
           </button>
+
+          {user?.mustChangePassword ? (
+            (user?.role === 'coordinator' || user?.role === 'student') && (
+              <button
+                type="button"
+                onClick={handleSkip}
+                disabled={loading}
+                className="w-full py-2.5 px-4 mt-2 rounded-xl text-center text-sm font-semibold border border-dark-600 bg-transparent text-gray-400 hover:text-white hover:bg-dark-800 transition duration-200"
+              >
+                Skip
+              </button>
+            )
+          ) : (
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              disabled={loading}
+              className="w-full py-2.5 px-4 mt-2 rounded-xl text-center text-sm font-semibold border border-dark-600 bg-transparent text-gray-400 hover:text-white hover:bg-dark-800 transition duration-200"
+            >
+              Cancel
+            </button>
+          )}
         </form>
       </motion.div>
     </div>

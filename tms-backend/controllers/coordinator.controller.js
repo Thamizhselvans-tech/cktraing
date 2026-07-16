@@ -49,10 +49,10 @@ exports.getCoordinator = catchAsync(async (req, res) => {
 
 // POST create coordinator
 exports.createCoordinator = catchAsync(async (req, res) => {
-  const { username, password, name, email, department, phone } = req.body;
+  const { username, name, email, department, phone } = req.body;
 
-  if (!username || !password || !name || !department) {
-    return sendError(res, 400, 'Username, password, name, and department are required.');
+  if (!username || !name || !department) {
+    return sendError(res, 400, 'Coordinator ID, name, and department are required.');
   }
 
   const dept = await Department.findById(department);
@@ -60,8 +60,38 @@ exports.createCoordinator = catchAsync(async (req, res) => {
     return sendError(res, 404, 'Department not found or inactive.');
   }
 
+  let deptCode = dept.code.toLowerCase();
+  if (dept.name.toUpperCase().includes('CSE')) deptCode = 'cse';
+  else if (dept.name.toUpperCase().includes('AIDS') || dept.name.toUpperCase().includes('ARTIFICIAL')) deptCode = 'aids';
+  else if (dept.name.toUpperCase().includes('IT') || dept.name.toUpperCase().includes('INFORMATION')) deptCode = 'it';
+
+  let coordId = username.trim().toLowerCase();
+  
+  // Strip dept code suffix if present (e.g. "205it" -> "205")
+  coordId = coordId.replace(new RegExp(`${deptCode}$`, 'i'), '');
+  
+  // Strip numeric code if present (e.g. "205205" -> "205")
+  const numCodeMatch = dept.code.match(/\d+/);
+  if (numCodeMatch) {
+    coordId = coordId.replace(new RegExp(`${numCodeMatch[0]}$`, 'i'), '');
+  }
+
+  // Fallback to default digit code if completely empty
+  if (!coordId) {
+    coordId = numCodeMatch ? numCodeMatch[0] : deptCode;
+  }
+
+  const generatedUsername = `${coordId}${deptCode}`;
+  const generatedPassword = `${coordId}${deptCode}`;
+
   const coordinator = await DepartmentCoordinator.create({
-    username, password, name, email, department, phone,
+    username: generatedUsername,
+    password: generatedPassword,
+    name,
+    email,
+    department,
+    phone,
+    mustChangePassword: true,
   });
 
   await createAuditLog({

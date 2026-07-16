@@ -14,7 +14,6 @@ const coordinatorSchema = new mongoose.Schema(
     password: {
       type: String,
       required: [true, 'Password is required'],
-      minlength: [6, 'Password must be at least 6 characters'],
       select: false,
     },
     name: {
@@ -41,6 +40,10 @@ const coordinatorSchema = new mongoose.Schema(
       type: String,
       enum: [STATUS.ACTIVE, STATUS.INACTIVE],
       default: STATUS.ACTIVE,
+    },
+    mustChangePassword: {
+      type: Boolean,
+      default: true,
     },
   },
   { timestamps: true }
