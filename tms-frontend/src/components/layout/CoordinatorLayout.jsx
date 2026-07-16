@@ -13,7 +13,7 @@ const NAV_LINKS = [
   { to: '/coordinator/attendance',         label: 'Attendance',       icon: ClipboardCheck },
   { to: '/coordinator/marks',              label: 'Marks Entry',      icon: BookOpen },
   { to: '/coordinator/students',           label: 'Student List',     icon: Users },
-  { to: '/coordinator/training-schedule',  label: 'Training Schedule',icon: Calendar },
+  { to: '/coordinator/schedule',           label: 'Training Schedule',icon: Calendar },
 ];
 
 const sidebarVariants = {

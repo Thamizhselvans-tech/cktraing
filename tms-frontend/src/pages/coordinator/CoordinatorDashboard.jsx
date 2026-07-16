@@ -129,7 +129,7 @@ export default function CoordinatorDashboard() {
             </div>
 
             <div
-              onClick={() => navigate('/coordinator/training-schedule')}
+              onClick={() => navigate('/coordinator/schedule')}
               className="glass-card-hover p-6 cursor-pointer flex items-center gap-4 group"
             >
               <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl group-hover:scale-110 transition-transform">
