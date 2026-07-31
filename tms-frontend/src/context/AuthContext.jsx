@@ -46,10 +46,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    try { await logoutApi(); } catch {}
+    try {
+      await logoutApi();
+    } catch {}
     localStorage.removeItem('tms_token');
+    localStorage.clear();
+    sessionStorage.clear();
     setUser(null);
     setIsAuthenticated(false);
+    window.location.href = '/';
   };
 
   const updateUser = (updatedData) => {

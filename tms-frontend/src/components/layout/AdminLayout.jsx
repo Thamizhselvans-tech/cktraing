@@ -69,13 +69,8 @@ export default function AdminLayout({ children }) {
   };
 
   const handleLogout = async () => {
-    try {
-      await logout();
-      toast.success('Logged out successfully');
-      navigate('/');
-    } catch {
-      toast.error('Logout failed');
-    }
+    toast.success('Logged out successfully');
+    await logout();
   };
 
   const renderFlatLink = (to, label, Icon) => {

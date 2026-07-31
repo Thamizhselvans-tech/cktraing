@@ -31,13 +31,8 @@ export default function StudentLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleLogout = async () => {
-    try {
-      await logout();
-      toast.success('Logged out successfully');
-      navigate('/');
-    } catch {
-      toast.error('Logout failed');
-    }
+    toast.success('Logged out successfully');
+    await logout();
   };
 
   const renderSidebarContent = () => (
