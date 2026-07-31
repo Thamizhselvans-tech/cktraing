@@ -43,27 +43,36 @@ exports.createDepartment = catchAsync(async (req, res) => {
 
   if (!name || !code) return sendError(res, 400, 'Name and code are required.');
 
-  const upperCode = code.toUpperCase();
-  const existing = await firebaseDb.findOne('departments', d => 
-    d.name?.toLowerCase() === name.toLowerCase() || d.code?.toUpperCase() === upperCode
+  const upperCode = code.trim().toUpperCase();
+  const cleanName = name.trim();
+
+  const existingDepts = await firebaseDb.getAll('departments');
+  const existing = existingDepts.find(d => 
+    (d.name && d.name.toLowerCase() === cleanName.toLowerCase()) || 
+    (d.code && d.code.toUpperCase() === upperCode)
   );
-  if (existing) return sendError(res, 409, 'Department name or code already exists.');
+
+  if (existing) {
+    return sendError(res, 409, `Department code '${upperCode}' or name '${cleanName}' already exists.`);
+  }
 
   const department = await firebaseDb.create('departments', {
-    name,
+    name: cleanName,
     code: upperCode,
-    description: description || '',
+    description: description ? description.trim() : '',
     status: STATUS.ACTIVE
   });
 
-  await createAuditLog({
+  const performedBy = req.user ? { _id: req.user.id || '', name: req.user.name || req.user.username || 'Admin', role: req.user.role || 'admin' } : {};
+
+  createAuditLog({
     action: AUDIT_ACTIONS.CREATE,
     entity: AUDIT_ENTITIES.DEPARTMENT,
     entityId: department._id,
-    performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
+    performedBy,
     ipAddress: req.ip,
     newData: department,
-    description: `Created department '${name}'`,
+    description: `Created department '${cleanName}'`,
   });
 
   return sendSuccess(res, 201, 'Department created successfully', department);
@@ -76,18 +85,20 @@ exports.updateDepartment = catchAsync(async (req, res) => {
   if (!department) return sendError(res, 404, 'Department not found.');
 
   const updates = {};
-  if (name) updates.name = name;
-  if (code) updates.code = code.toUpperCase();
-  if (description !== undefined) updates.description = description;
+  if (name) updates.name = name.trim();
+  if (code) updates.code = code.trim().toUpperCase();
+  if (description !== undefined) updates.description = description ? description.trim() : '';
   if (status) updates.status = status;
 
   const updatedDept = await firebaseDb.update('departments', req.params.id, updates);
 
-  await createAuditLog({
+  const performedBy = req.user ? { _id: req.user.id || '', name: req.user.name || req.user.username || 'Admin', role: req.user.role || 'admin' } : {};
+
+  createAuditLog({
     action: AUDIT_ACTIONS.UPDATE,
     entity: AUDIT_ENTITIES.DEPARTMENT,
     entityId: req.params.id,
-    performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
+    performedBy,
     ipAddress: req.ip,
     previousData: department,
     newData: updatedDept,
@@ -119,11 +130,13 @@ exports.deleteDepartment = catchAsync(async (req, res) => {
     await firebaseDb.update('departments', req.params.id, { status: STATUS.INACTIVE });
   }
 
-  await createAuditLog({
+  const performedBy = req.user ? { _id: req.user.id || '', name: req.user.name || req.user.username || 'Admin', role: req.user.role || 'admin' } : {};
+
+  createAuditLog({
     action: AUDIT_ACTIONS.DELETE,
     entity: AUDIT_ENTITIES.DEPARTMENT,
     entityId: req.params.id,
-    performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
+    performedBy,
     ipAddress: req.ip,
     description: `Deleted department '${department.name}'`,
   });
