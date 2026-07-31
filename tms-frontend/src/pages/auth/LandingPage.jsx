@@ -45,11 +45,9 @@ export default function LandingPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="inline-flex items-center gap-3 bg-white/5 border border-white/10 px-4 py-2 rounded-2xl mb-6">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-glow-blue">
-            <GraduationCap className="text-white" size={18} />
-          </div>
-          <span className="text-white font-display font-bold">TMS</span>
+        <div className="inline-flex items-center gap-3 bg-white/10 border border-white/20 px-5 py-2.5 rounded-2xl mb-6 shadow-xl backdrop-blur-md">
+          <img src="/favicon.svg" alt="CKCET Logo" className="w-9 h-9 object-contain" />
+          <span className="text-white font-display font-black text-lg tracking-wider">CKCET</span>
         </div>
         <h1 className="text-4xl sm:text-5xl font-display font-black text-white tracking-tight">
           Training Management <span className="text-gradient-blue">System</span>

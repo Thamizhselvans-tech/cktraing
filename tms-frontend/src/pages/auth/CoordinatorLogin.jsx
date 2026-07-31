@@ -54,10 +54,8 @@ export default function CoordinatorLogin() {
       {/* Left side decorative (hidden on mobile) */}
       <div className="hidden lg:flex flex-col justify-between w-1/2 bg-dark-800/40 p-12 border-r border-white/5 relative z-10">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center shadow-glow-emerald">
-            <GraduationCap className="text-white" size={20} />
-          </div>
-          <span className="font-display font-black text-xl text-white">TMS</span>
+          <img src="/favicon.svg" alt="CKCET Logo" className="w-10 h-10 object-contain" />
+          <span className="font-display font-black text-2xl text-white tracking-wider">CKCET</span>
         </div>
         <div className="my-auto max-w-lg">
           <h2 className="text-4xl font-display font-black text-white leading-tight">

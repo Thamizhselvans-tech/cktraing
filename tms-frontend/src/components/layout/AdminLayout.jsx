@@ -158,12 +158,10 @@ export default function AdminLayout({ children }) {
     <div className="flex flex-col h-full min-h-0 bg-dark-900 border-r border-white/5 portal-sidebar overflow-hidden">
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-white/5">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-glow-blue flex-shrink-0">
-          <GraduationCap size={20} className="text-white" />
-        </div>
+        <img src="/favicon.svg" alt="CKCET Logo" className="w-9 h-9 object-contain flex-shrink-0" />
         <div>
-          <p className="font-display font-bold text-white text-base leading-none">TMS</p>
-          <p className="text-[10px] text-gray-500 mt-1 uppercase tracking-widest leading-none">Training Management System</p>
+          <p className="font-display font-black text-white text-base leading-none tracking-wider">CKCET</p>
+          <p className="text-[10px] text-blue-400 font-semibold mt-1 uppercase tracking-widest leading-none">Training Management System</p>
         </div>
       </div>
 
