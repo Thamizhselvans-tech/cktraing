@@ -71,32 +71,40 @@ export default function DepartmentManagement() {
   const handleSave = async (e) => {
     e.preventDefault();
     if (!name || !code) return toast.error('Name and Code are required');
-    setSaving(true);
 
-    const savingTimeout = setTimeout(() => {
-      setSaving(false);
-    }, 3000);
+    const upperCode = code.trim().toUpperCase();
+    const cleanName = name.trim();
+    const currentEditId = editId;
 
+    const tempObj = {
+      _id: currentEditId || 'temp_' + Date.now(),
+      id: currentEditId || 'temp_' + Date.now(),
+      name: cleanName,
+      code: upperCode,
+      description: description ? description.trim() : '',
+      status: status || 'Active'
+    };
+
+    // 1. Instantly update UI and close modal in 0ms!
+    setModalOpen(false);
+    if (currentEditId) {
+      setDepartments(prev => prev.map(d => (d._id === currentEditId || d.id === currentEditId) ? tempObj : d));
+    } else {
+      setDepartments(prev => [tempObj, ...prev]);
+    }
+    toast.success(`Department '${upperCode}' saved!`);
+
+    // 2. Background database sync
     try {
-      let res;
-      if (editId) {
-        res = await updateDepartment(editId, { name, code, description, status });
+      if (currentEditId) {
+        await updateDepartment(currentEditId, { name: cleanName, code: upperCode, description, status });
       } else {
-        res = await createDepartment({ name, code, description });
+        await createDepartment({ name: cleanName, code: upperCode, description });
       }
-      clearTimeout(savingTimeout);
-      if (res.data?.success) {
-        toast.success(res.data.message || 'Department saved successfully');
-        setModalOpen(false);
-        fetchDepartments();
-      } else {
-        toast.error(res.data?.message || 'Failed to save department');
-      }
+      fetchDepartments();
     } catch (err) {
-      clearTimeout(savingTimeout);
-      toast.error(err.response?.data?.message || 'Error occurred during save');
-    } finally {
-      setSaving(false);
+      toast.error(err.response?.data?.message || 'Failed to sync with server');
+      fetchDepartments();
     }
   };
 
