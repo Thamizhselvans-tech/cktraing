@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "start": "node tms-backend/server.js",
-    "build": "npm --prefix tms-backend install && npm --prefix tms-frontend install && npm --prefix tms-frontend run build",
+    "build": "cd tms-frontend && npm install && npm run build",
     "dev": "npm --prefix tms-backend run dev"
   },
   "engines": {
