@@ -4,7 +4,7 @@ if (!db) {
   throw new Error("Firebase database instance not initialized in config/firebase.js");
 }
 
-const FETCH_TIMEOUT_MS = 8000;
+const FETCH_TIMEOUT_MS = 25000;
 
 function withTimeout(promise, ms = FETCH_TIMEOUT_MS) {
   return Promise.race([
