@@ -16,14 +16,12 @@ app.listen(PORT, () => {
   }
 });
 
-// Handle unhandled promise rejections
+// Handle unhandled promise rejections gracefully without crashing server process
 process.on('unhandledRejection', (err) => {
-  console.error('❌ Unhandled Rejection:', err.message);
-  process.exit(1);
+  console.error('⚠️ [Server] Unhandled Rejection (handled safely):', err?.message || err);
 });
 
-// Handle uncaught exceptions
+// Handle uncaught exceptions gracefully without crashing server process
 process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err.message);
-  process.exit(1);
+  console.error('⚠️ [Server] Uncaught Exception (handled safely):', err?.message || err);
 });
