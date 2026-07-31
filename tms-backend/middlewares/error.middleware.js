@@ -41,6 +41,10 @@ const errorHandler = (err, req, res, next) => {
     message = 'Session expired. Please log in again.';
   }
 
+  if (message.includes('timed out') || message.includes('Database')) {
+    message = 'Server busy. Please click login again.';
+  }
+
   // Log in development
   if (process.env.NODE_ENV === 'development') {
     console.error('❌ Error:', err);

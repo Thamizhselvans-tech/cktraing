@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: tms-backend
+    env: node
+    rootDir: tms-backend
+    buildCommand: npm install
+    startCommand: node server.js

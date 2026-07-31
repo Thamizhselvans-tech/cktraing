@@ -1,0 +1,13 @@
+{
+  "name": "tms-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node tms-backend/server.js",
+    "build": "npm --prefix tms-backend install && npm --prefix tms-frontend install && npm --prefix tms-frontend run build",
+    "dev": "npm --prefix tms-backend run dev"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
