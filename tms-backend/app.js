@@ -3,11 +3,15 @@ const helmet = require('helmet');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const { errorHandler, notFound } = require('./middlewares/error.middleware');
 const routes = require('./routes');
 
 const app = express();
+
+// ─── Compression Middleware (Gzip for maximum API transfer speed) ────────────
+app.use(compression());
 
 // ─── Security Headers ─────────────────────────────────────────────────────────
 app.use(helmet());
