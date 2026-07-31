@@ -19,21 +19,39 @@ function withTimeout(promise, ms = 5000) {
   ]);
 }
 
+const queryCache = {};
+const CACHE_TTL_MS = 5000;
+
 const firebaseDb = {
+  clearCache(node) {
+    if (node) delete queryCache[node];
+    else Object.keys(queryCache).forEach(k => delete queryCache[k]);
+  },
+
   // Get all items in a node as an array of objects
   async getAll(node) {
+    const now = Date.now();
+    if (queryCache[node] && (now - queryCache[node].timestamp < CACHE_TTL_MS)) {
+      return queryCache[node].data;
+    }
+
     try {
       const snapshot = await withTimeout(db.ref(node).once('value'));
       const val = snapshot ? snapshot.val() : null;
-      if (!val) return [];
-      return Object.keys(val).map(key => ({
+      if (!val) {
+        queryCache[node] = { timestamp: now, data: [] };
+        return [];
+      }
+      const data = Object.keys(val).map(key => ({
         _id: key,
         id: key,
         ...val[key]
       }));
+      queryCache[node] = { timestamp: now, data };
+      return data;
     } catch (err) {
       console.error(`⚠️ [Firebase] Timeout/Error fetching node '${node}':`, err.message);
-      return [];
+      return queryCache[node] ? queryCache[node].data : [];
     }
   },
 
@@ -82,6 +100,7 @@ const firebaseDb = {
 
   // Create document in node
   async create(node, data, customId = null) {
+    this.clearCache(node);
     const ref = customId ? db.ref(`${node}/${customId}`) : db.ref(node).push();
     const id = customId || ref.key;
     const now = new Date().toISOString();
@@ -98,6 +117,7 @@ const firebaseDb = {
   // Update item
   async update(node, id, updates) {
     if (!id) return null;
+    this.clearCache(node);
     const ref = db.ref(`${node}/${id}`);
     const now = new Date().toISOString();
     const payload = {
@@ -116,12 +136,14 @@ const firebaseDb = {
   // Perform atomic multi-path update in 1 network call
   async multiUpdate(updatesObject) {
     if (!updatesObject || Object.keys(updatesObject).length === 0) return;
+    this.clearCache();
     await db.ref().update(updatesObject);
   },
 
   // Delete item
   async remove(node, id) {
     if (!id) return false;
+    this.clearCache(node);
     await db.ref(`${node}/${id}`).remove();
     return true;
   },
