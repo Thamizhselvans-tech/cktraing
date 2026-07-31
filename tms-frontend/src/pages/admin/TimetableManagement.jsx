@@ -181,6 +181,10 @@ export default function TimetableManagement() {
     }
 
     setSaving(true);
+    const savingTimeout = setTimeout(() => {
+      setSaving(false);
+    }, 3000);
+
     try {
       let res;
       if (editId) {
@@ -192,13 +196,17 @@ export default function TimetableManagement() {
         else if (activeTab === 'external') res = await createExternalTimetable(payload);
         else res = await createSchedule(payload);
       }
+      clearTimeout(savingTimeout);
 
-      if (res.data.success) {
+      if (res.data?.success) {
         toast.success(res.data.message || 'Timetable saved');
         setModalOpen(false);
         fetchTimetable();
+      } else {
+        toast.error(res.data?.message || 'Error saving timetable');
       }
     } catch (err) {
+      clearTimeout(savingTimeout);
       toast.error(err.response?.data?.message || 'Error saving timetable');
     } finally {
       setSaving(false);

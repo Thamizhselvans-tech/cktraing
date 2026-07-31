@@ -72,6 +72,11 @@ export default function DepartmentManagement() {
     e.preventDefault();
     if (!name || !code) return toast.error('Name and Code are required');
     setSaving(true);
+
+    const savingTimeout = setTimeout(() => {
+      setSaving(false);
+    }, 3000);
+
     try {
       let res;
       if (editId) {
@@ -79,12 +84,16 @@ export default function DepartmentManagement() {
       } else {
         res = await createDepartment({ name, code, description });
       }
-      if (res.data.success) {
-        toast.success(res.data.message || 'Saved successfully');
+      clearTimeout(savingTimeout);
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Department saved successfully');
         setModalOpen(false);
         fetchDepartments();
+      } else {
+        toast.error(res.data?.message || 'Failed to save department');
       }
     } catch (err) {
+      clearTimeout(savingTimeout);
       toast.error(err.response?.data?.message || 'Error occurred during save');
     } finally {
       setSaving(false);
