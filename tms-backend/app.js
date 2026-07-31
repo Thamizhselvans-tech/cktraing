@@ -31,6 +31,33 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
+// ─── Health & Root Check Endpoints (Fast 200 OK Response) ──────────────────────
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Welcome to the Training Management System (TMS) Backend API. Use /api for endpoints.',
+    status: 'online',
+  });
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'TMS API is running',
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'TMS API is running',
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // ─── Rate Limiter ──────────────────────────────────────────────────────────────
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -55,29 +82,6 @@ app.use('/api/auth', authLimiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
-
-// ─── Logger (Development) ──────────────────────────────────────────────────────
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-}
-
-// ─── Health Check ─────────────────────────────────────────────────────────────
-app.get('/', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'Welcome to the Training Management System (TMS) Backend API. Use /api for endpoints.',
-    status: 'online',
-  });
-});
-
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'TMS API is running',
-    environment: process.env.NODE_ENV,
-    timestamp: new Date().toISOString(),
-  });
-});
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api', routes);
