@@ -4,11 +4,22 @@ if (!db) {
   throw new Error("Firebase database instance not initialized in config/firebase.js");
 }
 
+const FETCH_TIMEOUT_MS = 8000;
+
+function withTimeout(promise, ms = FETCH_TIMEOUT_MS) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Database query timed out. Please try again.')), ms)
+    ),
+  ]);
+}
+
 const firebaseDb = {
   // Get all items in a node as an array of objects
   async getAll(node) {
-    const snapshot = await db.ref(node).once('value');
-    const val = snapshot.val();
+    const snapshot = await withTimeout(db.ref(node).once('value'));
+    const val = snapshot ? snapshot.val() : null;
     if (!val) return [];
     return Object.keys(val).map(key => ({
       _id: key,
@@ -20,8 +31,8 @@ const firebaseDb = {
   // Get item by ID
   async getById(node, id) {
     if (!id) return null;
-    const snapshot = await db.ref(`${node}/${id}`).once('value');
-    const val = snapshot.val();
+    const snapshot = await withTimeout(db.ref(`${node}/${id}`).once('value'));
+    const val = snapshot ? snapshot.val() : null;
     if (!val) return null;
     return {
       _id: id,

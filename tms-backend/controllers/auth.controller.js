@@ -36,18 +36,19 @@ exports.adminLogin = catchAsync(async (req, res) => {
   }
 
   const payload = { id: admin._id, role: ROLES.ADMIN, name: admin.name, username: admin.username };
-  generateTokenAndSetCookie(res, payload);
+  const token = generateTokenAndSetCookie(res, payload);
 
-  await createAuditLog({
+  createAuditLog({
     action: AUDIT_ACTIONS.LOGIN,
     entity: AUDIT_ENTITIES.STUDENT,
     entityId: admin._id,
     performedBy: { _id: admin._id, name: admin.name, role: ROLES.ADMIN },
     ipAddress: req.ip,
     description: `Admin '${admin.username}' logged in`,
-  });
+  }).catch(err => console.error('AuditLog error:', err.message));
 
   return sendSuccess(res, 200, 'Login successful', {
+    token,
     id: admin._id,
     name: admin.name,
     username: admin.username,
@@ -105,18 +106,19 @@ exports.coordinatorLogin = catchAsync(async (req, res) => {
     department: coordinator.departmentId,
     mustChangePassword: coordinator.mustChangePassword,
   };
-  generateTokenAndSetCookie(res, payload);
+  const token = generateTokenAndSetCookie(res, payload);
 
-  await createAuditLog({
+  createAuditLog({
     action: AUDIT_ACTIONS.LOGIN,
     entity: 'Coordinator',
     entityId: coordinator._id,
     performedBy: { _id: coordinator._id, name: coordinator.name, role: ROLES.COORDINATOR },
     ipAddress: req.ip,
     description: `Coordinator '${coordinator.username}' logged in`,
-  });
+  }).catch(err => console.error('AuditLog error:', err.message));
 
   return sendSuccess(res, 200, 'Login successful', {
+    token,
     id: coordinator._id,
     name: coordinator.name,
     username: coordinator.username,
@@ -200,18 +202,19 @@ exports.studentLogin = catchAsync(async (req, res) => {
     department: student.departmentId,
     mustChangePassword: student.mustChangePassword,
   };
-  generateTokenAndSetCookie(res, payload);
+  const token = generateTokenAndSetCookie(res, payload);
 
-  await createAuditLog({
+  createAuditLog({
     action: AUDIT_ACTIONS.LOGIN,
     entity: AUDIT_ENTITIES.STUDENT,
     entityId: student._id,
     performedBy: { _id: student._id, name: student.name, role: ROLES.STUDENT },
     ipAddress: req.ip,
     description: `Student '${student.registerNumber}' logged in`,
-  });
+  }).catch(err => console.error('AuditLog error:', err.message));
 
   return sendSuccess(res, 200, 'Login successful', {
+    token,
     id: student._id,
     name: student.name,
     registerNumber: student.registerNumber,

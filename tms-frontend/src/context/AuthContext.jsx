@@ -38,12 +38,16 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = (userData) => {
+    if (userData?.token) {
+      localStorage.setItem('tms_token', userData.token);
+    }
     setUser(userData);
     setIsAuthenticated(true);
   };
 
   const logout = async () => {
     try { await logoutApi(); } catch {}
+    localStorage.removeItem('tms_token');
     setUser(null);
     setIsAuthenticated(false);
   };

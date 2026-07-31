@@ -9,8 +9,12 @@ const { JWT_COOKIE_NAME } = require('../config/constants');
  */
 const protect = (req, res, next) => {
   try {
-    // Read token from HttpOnly cookie
-    const token = req.cookies[JWT_COOKIE_NAME];
+    // Read token from HttpOnly cookie or Authorization Bearer header
+    let token = req.cookies?.[JWT_COOKIE_NAME];
+
+    if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
 
     if (!token) {
       return sendError(res, 401, 'Not authenticated. Please log in.');
@@ -44,7 +48,7 @@ const generateTokenAndSetCookie = (res, payload) => {
   res.cookie(JWT_COOKIE_NAME, token, {
     httpOnly: true,
     secure: isProd || process.env.COOKIE_SECURE === 'true',
-    sameSite: 'Lax',
+    sameSite: isProd ? 'none' : 'Lax',
     maxAge: 8 * 60 * 60 * 1000, // 8 hours in ms
   });
 
@@ -55,10 +59,11 @@ const generateTokenAndSetCookie = (res, payload) => {
  * Clear JWT cookie on logout.
  */
 const clearTokenCookie = (res) => {
+  const isProd = process.env.NODE_ENV === 'production';
   res.cookie(JWT_COOKIE_NAME, '', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Lax',
+    secure: isProd || process.env.COOKIE_SECURE === 'true',
+    sameSite: isProd ? 'none' : 'Lax',
     expires: new Date(0),
   });
 };

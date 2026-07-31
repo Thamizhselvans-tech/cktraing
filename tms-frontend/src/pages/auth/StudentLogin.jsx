@@ -19,8 +19,10 @@ export default function StudentLogin() {
       return toast.error('Please enter both Register Number and password.');
     }
     setLoading(true);
+    const toastId = toast.loading('Connecting to server...');
     try {
       const { data } = await studentLogin({ registerNumber, password });
+      toast.dismiss(toastId);
       if (data.success) {
         login(data.data);
         toast.success(data.message || 'Login successful!');
@@ -33,7 +35,12 @@ export default function StudentLogin() {
         toast.error(data.message || 'Invalid credentials');
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Login failed. Please try again.');
+      toast.dismiss(toastId);
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        toast.error('Server is taking time to wake up. Please click login again!');
+      } else {
+        toast.error(err.response?.data?.message || 'Login failed. Please check network/credentials and try again.');
+      }
     } finally {
       setLoading(false);
     }
