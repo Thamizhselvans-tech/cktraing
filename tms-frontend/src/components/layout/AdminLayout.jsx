@@ -154,8 +154,8 @@ export default function AdminLayout({ children }) {
     );
   };
 
-  const SidebarContent = () => (
-    <div className="flex flex-col h-full bg-dark-900 border-r border-white/5 portal-sidebar">
+  const renderSidebarContent = () => (
+    <div className="flex flex-col h-full min-h-0 bg-dark-900 border-r border-white/5 portal-sidebar overflow-hidden">
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-white/5">
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-glow-blue flex-shrink-0">
@@ -190,7 +190,7 @@ export default function AdminLayout({ children }) {
       </div>
 
       {/* Nav Links */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1 no-scrollbar">
+      <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-1 custom-sidebar-scroll">
         {renderFlatLink('/admin/dashboard', 'Dashboard', Home)}
         {renderFlatLink('/admin/departments', 'Department Management', Building2)}
         {renderFlatLink('/admin/coordinators', 'Trainer Management', User)}
@@ -207,6 +207,7 @@ export default function AdminLayout({ children }) {
           { to: '/admin/reports', tab: 'marks', label: 'Marks Report' },
           { to: '/admin/reports', tab: 'feedback', label: 'Feedback Report' },
           { to: '/admin/reports', tab: 'department', label: 'Department Report' },
+          { to: '/admin/reports', tab: 'send-principal', label: 'Send to Principal' },
         ])}
 
         {renderCollapsibleMenu('feedback', 'Feedback Management', MessageSquare, [
@@ -284,7 +285,7 @@ export default function AdminLayout({ children }) {
       </nav>
 
       {/* Logout button at very bottom */}
-      <div className="mt-auto px-3 py-4 border-t border-white/5">
+      <div className="flex-shrink-0 px-3 py-4 border-t border-white/5 bg-dark-900/90">
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 w-full px-4 py-2.5 rounded-xl text-xs font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors"
@@ -299,8 +300,8 @@ export default function AdminLayout({ children }) {
   return (
     <div className="flex h-screen overflow-hidden bg-dark-900">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-64 flex-shrink-0 bg-dark-800/80 backdrop-blur-md border-r border-white/10">
-        <SidebarContent />
+      <aside className="hidden lg:flex flex-col w-64 h-full min-h-0 flex-shrink-0 bg-dark-800/80 backdrop-blur-md border-r border-white/10 overflow-hidden">
+        {renderSidebarContent()}
       </aside>
 
       {/* Mobile Overlay */}
@@ -327,7 +328,7 @@ export default function AdminLayout({ children }) {
               >
                 <X size={20} />
               </button>
-              <SidebarContent />
+              {renderSidebarContent()}
             </motion.aside>
           </>
         )}

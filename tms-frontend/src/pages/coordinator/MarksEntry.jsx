@@ -24,12 +24,14 @@ export default function MarksEntry() {
   const [technical, setTechnical] = useState(0);
   const [saving, setSaving] = useState(false);
 
+  const deptId = typeof user?.department === 'object' ? user?.department?._id : user?.department;
+
   const fetchMarksSheet = useCallback(async () => {
-    if (!user?.department?._id) return;
+    if (!deptId) return;
     setLoading(true);
     try {
       // 1. Get all students
-      const studRes = await getStudentsByDept(user.department._id, { search, limit: 100 });
+      const studRes = await getStudentsByDept(deptId, { search, limit: 100 });
       let studentList = [];
       if (studRes.data.success) {
         studentList = studRes.data.data;
@@ -37,8 +39,8 @@ export default function MarksEntry() {
       }
 
       // 2. Get department marks
-      const marksRes = await getDepartmentMarks(user.department._id, { limit: 100 });
-      const records = marksRes.data.data;
+      const marksRes = await getDepartmentMarks(deptId, { limit: 100 });
+      const records = marksRes.data.data || [];
 
       const map = {};
       records.forEach((r) => {
@@ -50,7 +52,7 @@ export default function MarksEntry() {
     } finally {
       setLoading(false);
     }
-  }, [user, search]);
+  }, [deptId, search]);
 
   useEffect(() => {
     fetchMarksSheet();
@@ -67,6 +69,9 @@ export default function MarksEntry() {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (!deptId) {
+      return toast.error('Department ID missing for coordinator.');
+    }
     if (mockTest < 0 || mockTest > 100 || aptitude < 0 || aptitude > 100 || technical < 0 || technical > 100) {
       return toast.error('Marks must be between 0 and 100');
     }
@@ -75,14 +80,14 @@ export default function MarksEntry() {
     try {
       const res = await createOrUpdateMarks({
         student: selectedStudent._id,
-        department: user.department._id,
+        department: deptId,
         mockTest: Number(mockTest),
         aptitude: Number(aptitude),
         technical: Number(technical),
       });
 
       if (res.data.success) {
-        toast.success('Marks recorded successfully');
+        toast.success('🎉 Marks recorded successfully! Admin can now view live reports.', { duration: 4000 });
         setModalOpen(false);
         fetchMarksSheet();
       }

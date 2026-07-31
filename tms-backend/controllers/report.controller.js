@@ -1,110 +1,178 @@
-const Student = require('../models/Student.model');
-const Attendance = require('../models/Attendance.model');
-const Marks = require('../models/Marks.model');
-const StudentFeedback = require('../models/StudentFeedback.model');
-const Department = require('../models/Department.model');
+const firebaseDb = require('../services/firebaseDb.service');
 const catchAsync = require('../utils/catchAsync');
 const { sendSuccess, sendError } = require('../utils/apiResponse');
+const { sendAttendanceEmailToPrincipal } = require('../services/email.service');
+const { createAuditLog } = require('../utils/helpers');
+const { AUDIT_ACTIONS, STATUS } = require('../config/constants');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 
-// ─── Helper: Get attendance data for report ────────────────────────────────────
-const getAttendanceReportData = async (filter) => {
-  return Attendance.find(filter)
-    .populate('student', 'name registerNumber year batch')
-    .populate('department', 'name code')
-    .sort({ date: -1 });
-};
+// Helper: Get attendance data
+const getAttendanceReportData = async (department, startDate, endDate, studentId) => {
+  let records = await firebaseDb.getAll('attendance');
 
-// ─── Helper: Get marks data for report ─────────────────────────────────────────
-const getMarksReportData = async (filter) => {
-  return Marks.find(filter)
-    .populate('student', 'name registerNumber year batch')
-    .populate('department', 'name code')
-    .sort({ 'student.name': 1 });
-};
+  if (department && department !== 'all') {
+    const dept = await firebaseDb.getById('departments', department);
+    const deptCode = dept ? dept.code?.toLowerCase() : null;
+    const deptName = dept ? dept.name?.toLowerCase() : null;
 
-// GET attendance report (preview)
-exports.getAttendanceReport = catchAsync(async (req, res) => {
-  const { department, startDate, endDate, studentId } = req.query;
-  const filter = {};
-  if (department) filter.department = department;
-  if (studentId) filter.student = studentId;
-  if (startDate && endDate) {
-    filter.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
+    records = records.filter(r => 
+      r.departmentId === department ||
+      (deptCode && r.departmentId?.toLowerCase() === deptCode) ||
+      (deptName && r.departmentId?.toLowerCase() === deptName)
+    );
   }
 
-  const records = await getAttendanceReportData(filter);
+  if (studentId) records = records.filter(r => r.studentId === studentId);
+
+  if (startDate) {
+    const sStr = startDate.split('T')[0];
+    records = records.filter(r => {
+      const dStr = r.date ? r.date.split('T')[0] : '';
+      return dStr >= sStr;
+    });
+  }
+
+  if (endDate) {
+    const eStr = endDate.split('T')[0];
+    records = records.filter(r => {
+      const dStr = r.date ? r.date.split('T')[0] : '';
+      return dStr <= eStr;
+    });
+  }
+
+  records.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const students = await firebaseDb.getAll('students');
+  const depts = await firebaseDb.getAll('departments');
+  const studentMap = {};
+  students.forEach(s => { studentMap[s._id] = s; });
+  const deptMap = {};
+  depts.forEach(d => { deptMap[d._id] = d; });
+
+  return records.map(r => ({
+    ...r,
+    student: r.studentId ? (studentMap[r.studentId] ? { _id: r.studentId, name: studentMap[r.studentId].name, registerNumber: studentMap[r.studentId].registerNumber, year: studentMap[r.studentId].year, batch: studentMap[r.studentId].batch } : null) : null,
+    department: r.departmentId ? (deptMap[r.departmentId] || null) : null
+  }));
+};
+
+// Helper: Get marks data
+const getMarksReportData = async (department, studentId) => {
+  let records = await firebaseDb.getAll('marks');
+  if (department) records = records.filter(m => m.departmentId === department);
+  if (studentId) records = records.filter(m => m.studentId === studentId);
+
+  const students = await firebaseDb.getAll('students');
+  const depts = await firebaseDb.getAll('departments');
+  const studentMap = {};
+  students.forEach(s => { studentMap[s._id] = s; });
+  const deptMap = {};
+  depts.forEach(d => { deptMap[d._id] = d; });
+
+  const populated = records.map(m => ({
+    ...m,
+    student: m.studentId ? (studentMap[m.studentId] ? { _id: m.studentId, name: studentMap[m.studentId].name, registerNumber: studentMap[m.studentId].registerNumber, year: studentMap[m.studentId].year, batch: studentMap[m.studentId].batch } : null) : null,
+    department: m.departmentId ? (deptMap[m.departmentId] || null) : null
+  }));
+
+  populated.sort((a, b) => (a.student?.name || '').localeCompare(b.student?.name || ''));
+  return populated;
+};
+
+// GET attendance report
+exports.getAttendanceReport = catchAsync(async (req, res) => {
+  const { department, startDate, endDate, studentId } = req.query;
+  const records = await getAttendanceReportData(department, startDate, endDate, studentId);
   return sendSuccess(res, 200, 'Attendance report data', records);
 });
 
-// GET marks report (preview)
+// GET marks report
 exports.getMarksReport = catchAsync(async (req, res) => {
   const { department, studentId } = req.query;
-  const filter = {};
-  if (department) filter.department = department;
-  if (studentId) filter.student = studentId;
-
-  const records = await getMarksReportData(filter);
+  const records = await getMarksReportData(department, studentId);
   return sendSuccess(res, 200, 'Marks report data', records);
 });
 
 // GET feedback report
 exports.getFeedbackReport = catchAsync(async (req, res) => {
   const { startDate, endDate } = req.query;
-  const filter = {};
+  let records = await firebaseDb.getAll('feedback');
+
   if (startDate && endDate) {
-    filter.createdAt = { $gte: new Date(startDate), $lte: new Date(endDate) };
+    const s = new Date(startDate);
+    const e = new Date(endDate);
+    records = records.filter(f => {
+      const d = new Date(f.createdAt);
+      return d >= s && d <= e;
+    });
   }
 
-  const records = await StudentFeedback.find(filter)
-    .populate('student', 'name registerNumber department')
-    .sort({ createdAt: -1 });
+  records.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-  return sendSuccess(res, 200, 'Feedback report data', records);
+  const students = await firebaseDb.getAll('students');
+  const depts = await firebaseDb.getAll('departments');
+  const studentMap = {};
+  students.forEach(s => { studentMap[s._id] = s; });
+  const deptMap = {};
+  depts.forEach(d => { deptMap[d._id] = d; });
+
+  const populated = records.map(f => ({
+    ...f,
+    student: f.studentId ? (studentMap[f.studentId] ? { 
+      _id: f.studentId, 
+      name: studentMap[f.studentId].name, 
+      registerNumber: studentMap[f.studentId].registerNumber,
+      department: studentMap[f.studentId].departmentId ? (deptMap[studentMap[f.studentId].departmentId] || null) : null
+    } : null) : null
+  }));
+
+  return sendSuccess(res, 200, 'Feedback report data', populated);
 });
 
 // GET department report
 exports.getDepartmentReport = catchAsync(async (req, res) => {
-  const departments = await Department.find({});
-  const report = await Promise.all(
-    departments.map(async (dept) => {
-      const studentCount = await Student.countDocuments({ department: dept._id });
-      const attStats = await Attendance.aggregate([
-        { $match: { department: dept._id } },
-        { $group: { _id: null, avg: { $avg: '$percentage' }, total: { $sum: 1 } } },
-      ]);
-      const marksStats = await Marks.aggregate([
-        { $match: { department: dept._id } },
-        { $group: { _id: null, avg: { $avg: '$average' }, count: { $sum: 1 } } },
-      ]);
+  const departments = await firebaseDb.getAll('departments');
+  const students = await firebaseDb.getAll('students');
+  const attendanceRecords = await firebaseDb.getAll('attendance');
+  const marksRecords = await firebaseDb.getAll('marks');
 
-      return {
-        department: dept.name,
-        code: dept.code,
-        status: dept.status,
-        totalStudents: studentCount,
-        avgAttendance: attStats[0]?.avg?.toFixed(2) || 0,
-        totalAttendanceRecords: attStats[0]?.total || 0,
-        avgMarks: marksStats[0]?.avg?.toFixed(2) || 0,
-        totalMarksRecords: marksStats[0]?.count || 0,
-      };
-    })
-  );
+  const report = departments.map(dept => {
+    const deptStudents = students.filter(s => s.departmentId === dept._id);
+    const deptAttendance = attendanceRecords.filter(r => r.departmentId === dept._id);
+    const deptMarks = marksRecords.filter(m => m.departmentId === dept._id);
+
+    const avgAttendance = deptAttendance.length > 0
+      ? parseFloat((deptAttendance.reduce((sum, r) => sum + (r.percentage || 0), 0) / deptAttendance.length).toFixed(2))
+      : 0;
+
+    const avgMarks = deptMarks.length > 0
+      ? parseFloat((deptMarks.reduce((sum, m) => sum + (m.average || 0), 0) / deptMarks.length).toFixed(2))
+      : 0;
+
+    return {
+      _id: dept._id,
+      id: dept._id,
+      department: dept.name,
+      name: dept.name,
+      code: dept.code,
+      description: dept.description || '',
+      status: dept.status || 'Active',
+      totalStudents: deptStudents.length,
+      avgAttendance,
+      totalAttendanceRecords: deptAttendance.length,
+      avgMarks,
+      totalMarksRecords: deptMarks.length,
+    };
+  });
 
   return sendSuccess(res, 200, 'Department report', report);
 });
 
-// ─── DOWNLOAD: Attendance Excel ─────────────────────────────────────────────────
+// DOWNLOAD: Attendance Excel
 exports.downloadAttendanceReport = catchAsync(async (req, res) => {
   const { format = 'excel', department, startDate, endDate } = req.query;
-  const filter = {};
-  if (department) filter.department = department;
-  if (startDate && endDate) {
-    filter.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
-  }
-
-  const records = await getAttendanceReportData(filter);
+  const records = await getAttendanceReportData(department, startDate, endDate);
 
   if (format === 'excel') {
     const workbook = new ExcelJS.Workbook();
@@ -120,10 +188,8 @@ exports.downloadAttendanceReport = catchAsync(async (req, res) => {
       { header: 'Percentage', key: 'percentage', width: 12 },
     ];
 
-    // Style header row
-    sheet.getRow(1).font = { bold: true };
-    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
     sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
 
     records.forEach((r) => {
       sheet.addRow({
@@ -135,17 +201,6 @@ exports.downloadAttendanceReport = catchAsync(async (req, res) => {
         afternoon: r.afternoonSession ? 'Present' : 'Absent',
         percentage: `${r.percentage}%`,
       });
-    });
-
-    // Color rows based on percentage
-    sheet.eachRow((row, rowNum) => {
-      if (rowNum > 1) {
-        const pctCell = row.getCell('percentage');
-        const pct = parseInt(pctCell.value);
-        if (pct === 100) pctCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
-        else if (pct === 50) pctCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } };
-        else pctCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8D7DA' } };
-      }
     });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -171,7 +226,6 @@ exports.downloadAttendanceReport = catchAsync(async (req, res) => {
     const colWidths = [100, 130, 80, 80, 70, 70, 50];
     let x = 40;
 
-    // Draw headers
     doc.font('Helvetica-Bold');
     headers.forEach((h, i) => {
       doc.text(h, x, tableTop, { width: colWidths[i] });
@@ -208,13 +262,10 @@ exports.downloadAttendanceReport = catchAsync(async (req, res) => {
   return sendError(res, 400, 'Invalid format. Use excel or pdf.');
 });
 
-// ─── DOWNLOAD: Marks Excel ──────────────────────────────────────────────────────
+// DOWNLOAD: Marks Excel
 exports.downloadMarksReport = catchAsync(async (req, res) => {
   const { format = 'excel', department } = req.query;
-  const filter = {};
-  if (department) filter.department = department;
-
-  const records = await getMarksReportData(filter);
+  const records = await getMarksReportData(department);
 
   if (format === 'excel') {
     const workbook = new ExcelJS.Workbook();
@@ -240,11 +291,11 @@ exports.downloadMarksReport = catchAsync(async (req, res) => {
         regNo: r.student?.registerNumber || '-',
         name: r.student?.name || '-',
         dept: r.department?.code || '-',
-        mockTest: r.mockTest,
-        aptitude: r.aptitude,
-        technical: r.technical,
-        total: r.total,
-        average: r.average,
+        mockTest: r.mockTest || 0,
+        aptitude: r.aptitude || 0,
+        technical: r.technical || 0,
+        total: r.total || 0,
+        average: r.average || 0,
         verified: r.isVerified ? 'Yes' : 'No',
       });
     });
@@ -257,4 +308,96 @@ exports.downloadMarksReport = catchAsync(async (req, res) => {
   }
 
   return sendError(res, 400, 'Invalid format. Use excel or pdf.');
+});
+
+// POST send attendance report to principal
+exports.sendAttendanceToPrincipal = catchAsync(async (req, res) => {
+  const { department, date, principalEmail, customMessage } = req.body;
+
+  if (!department || !principalEmail) {
+    return sendError(res, 400, 'Department and Principal Email address are required.');
+  }
+
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(principalEmail.trim())) {
+    return sendError(res, 400, 'Please enter a valid Principal email address.');
+  }
+
+  const dept = await firebaseDb.getById('departments', department);
+  if (!dept) return sendError(res, 404, 'Department not found.');
+
+  const reportDate = date ? new Date(date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
+  // Fetch attendance records for department & date
+  let records = await firebaseDb.getAll('attendance');
+  records = records.filter(r => r.departmentId === department && r.date && r.date.split('T')[0] === reportDate);
+
+  const students = await firebaseDb.getAll('students');
+  const studentMap = {};
+  students.forEach(s => { studentMap[s._id] = s; });
+
+  const populated = records.map(r => ({
+    ...r,
+    student: r.studentId ? (studentMap[r.studentId] ? { _id: r.studentId, name: studentMap[r.studentId].name, registerNumber: studentMap[r.studentId].registerNumber } : null) : null,
+  }));
+
+  populated.sort((a, b) => (a.student?.registerNumber || '').localeCompare(b.student?.registerNumber || ''));
+
+  // Calculate department student metrics
+  const deptCodeUpper = (dept.code || '').toUpperCase();
+  const deptNameUpper = (dept.name || '').toUpperCase();
+  const activeDeptStudents = students.filter(s => 
+    (s.departmentId === department ||
+     s.departmentId === deptCodeUpper ||
+     s.departmentId === deptNameUpper) &&
+    (s.status || 'Active') === STATUS.ACTIVE
+  );
+
+  const totalStudents = activeDeptStudents.length > 0 ? activeDeptStudents.length : populated.length;
+  const present = populated.filter(r => (r.morningSession && r.afternoonSession) || r.percentage === 100).length;
+  let absent = populated.filter(r => (!r.morningSession && !r.afternoonSession) || r.percentage === 0).length;
+  
+  if (totalStudents > populated.length) {
+    absent = totalStudents - present;
+  }
+
+  const percentage = totalStudents > 0 ? parseFloat(((present / totalStudents) * 100).toFixed(2)) : 0;
+
+  const summary = {
+    department: dept.name,
+    departmentCode: dept.code,
+    totalStudents,
+    present,
+    absent,
+    percentage,
+  };
+
+  // Dispatch email to principal
+  await sendAttendanceEmailToPrincipal({
+    principalEmail: principalEmail.trim(),
+    departmentName: dept.name,
+    departmentCode: dept.code,
+    date: reportDate,
+    records: populated,
+    summary,
+    customMessage,
+    senderName: req.user.name || req.user.username || 'Admin',
+  });
+
+  await createAuditLog({
+    action: AUDIT_ACTIONS.CREATE,
+    entity: 'PrincipalAttendanceReport',
+    entityId: null,
+    performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
+    ipAddress: req.ip,
+    description: `Sent attendance report for department '${dept.name}' (${reportDate}) to principal email ${principalEmail}`,
+  });
+
+  return sendSuccess(res, 200, `Attendance report successfully sent to Principal (${principalEmail})!`, {
+    department: dept.name,
+    date: reportDate,
+    principalEmail,
+    summary,
+  });
 });

@@ -40,8 +40,8 @@ export default function StudentLayout({ children }) {
     }
   };
 
-  const SidebarContent = () => (
-    <div className="flex flex-col h-full bg-dark-900 border-r border-white/5 portal-sidebar">
+  const renderSidebarContent = () => (
+    <div className="flex flex-col h-full min-h-0 bg-dark-900 border-r border-white/5 portal-sidebar overflow-hidden">
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-white/10">
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-rose-600 flex items-center justify-center flex-shrink-0">
@@ -54,7 +54,7 @@ export default function StudentLayout({ children }) {
       </div>
 
       {/* Nav Links */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1 no-scrollbar">
+      <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-1 custom-sidebar-scroll">
         {NAV_LINKS.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -76,7 +76,7 @@ export default function StudentLayout({ children }) {
       </nav>
 
       {/* User Card */}
-      <div className="px-3 py-4 border-t border-white/10">
+      <div className="flex-shrink-0 px-3 py-4 border-t border-white/10 bg-dark-900/90">
         <div className="glass-card p-3 flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-rose-600 flex items-center justify-center flex-shrink-0">
             <span className="text-white text-xs font-bold">
@@ -102,8 +102,8 @@ export default function StudentLayout({ children }) {
   return (
     <div className="flex h-screen overflow-hidden bg-dark-900 student-layout">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-64 flex-shrink-0 bg-dark-800/80 backdrop-blur-md border-r border-white/10">
-        <SidebarContent />
+      <aside className="hidden lg:flex flex-col w-64 h-full min-h-0 flex-shrink-0 bg-dark-800/80 backdrop-blur-md border-r border-white/10 overflow-hidden">
+        {renderSidebarContent()}
       </aside>
 
       {/* Mobile Overlay */}
@@ -130,7 +130,7 @@ export default function StudentLayout({ children }) {
               >
                 <X size={20} />
               </button>
-              <SidebarContent />
+              {renderSidebarContent()}
             </motion.aside>
           </>
         )}

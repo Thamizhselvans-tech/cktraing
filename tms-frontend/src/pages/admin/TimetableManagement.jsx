@@ -11,11 +11,15 @@ import {
   getExternalTimetable, createExternalTimetable, updateExternalTimetable, deleteExternalTimetable,
   getSchedules, createSchedule, updateSchedule, deleteSchedule
 } from '../../api/timetable.api';
+import { useAuth } from '../../context/AuthContext';
 import { getDepartments } from '../../api/departments.api';
 import { Plus, Edit2, Trash2, Calendar, ShieldCheck, MapPin } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function TimetableManagement() {
+  const { user } = useAuth();
+  const isAdminOrCoordinator = user?.role === 'admin' || user?.role === 'coordinator';
+
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'internal';
   const setActiveTab = (tab) => {
@@ -144,6 +148,9 @@ export default function TimetableManagement() {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (!isAdminOrCoordinator) {
+      return toast.error('Access denied. Only Admin or Coordinator can add or edit timetable events. Please log in as Admin!');
+    }
     if (!title || !date || !startTime || !endTime) {
       return toast.error('Title, date, start and end times are required');
     }
@@ -254,7 +261,7 @@ export default function TimetableManagement() {
       label: 'Status',
       render: (row) => <Badge text={(row.status || 'scheduled').toUpperCase()} type={getStatusType(row.status || 'scheduled')} />,
     },
-    {
+    ...(isAdminOrCoordinator ? [{
       key: 'actions',
       label: 'Actions',
       className: 'w-24 text-right',
@@ -268,7 +275,7 @@ export default function TimetableManagement() {
           </button>
         </div>
       ),
-    },
+    }] : []),
   ];
 
   return (
@@ -277,10 +284,12 @@ export default function TimetableManagement() {
         title="Timetable Management"
         subtitle="Manage College Training, Company Placements, and Administration schedules"
         actions={
-          <button onClick={handleOpenAdd} className="btn-primary flex items-center gap-2">
-            <Plus size={16} />
-            <span>Add Event</span>
-          </button>
+          isAdminOrCoordinator ? (
+            <button onClick={handleOpenAdd} className="btn-primary flex items-center gap-2">
+              <Plus size={16} />
+              <span>Add Event</span>
+            </button>
+          ) : null
         }
       />
 

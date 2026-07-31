@@ -34,6 +34,8 @@ export default function StudentManagement() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editId, setEditId] = useState(null);
   const [regNo, setRegNo] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [department, setDepartment] = useState('');
@@ -110,6 +112,8 @@ export default function StudentManagement() {
   const handleOpenAdd = () => {
     setEditId(null);
     setRegNo('');
+    setUsername('');
+    setPassword('');
     setName('');
     setEmail('');
     setDepartment(departments[0]?._id || '');
@@ -123,6 +127,8 @@ export default function StudentManagement() {
   const handleOpenEdit = (student) => {
     setEditId(student._id);
     setRegNo(student.registerNumber);
+    setUsername(student.username || student.registerNumber);
+    setPassword('');
     setName(student.name);
     setEmail(student.email || '');
     setDepartment(student.department?._id || '');
@@ -140,9 +146,29 @@ export default function StudentManagement() {
     try {
       let res;
       if (editId) {
-        res = await updateStudent(editId, { name, email, department, year, batch, phone, status });
+        res = await updateStudent(editId, {
+          username: username || regNo,
+          name,
+          email,
+          department,
+          year,
+          batch,
+          phone,
+          status,
+          ...(password ? { password } : {})
+        });
       } else {
-        res = await createStudent({ registerNumber: regNo, name, email, department, year, batch, phone });
+        res = await createStudent({
+          registerNumber: regNo,
+          username: username || regNo,
+          password: password || undefined,
+          name,
+          email,
+          department,
+          year,
+          batch,
+          phone
+        });
       }
       if (res.data.success) {
         toast.success(res.data.message || 'Saved successfully');
@@ -243,21 +269,19 @@ export default function StudentManagement() {
 
   const handleOpenDeleteFile = (id) => {
     setFileDeleteId(id);
-    setDeleteStudentsCheck(false);
+    setDeleteStudentsCheck(true);
     setFileDeleteOpen(true);
   };
 
   const handleConfirmDeleteFile = async () => {
     setFileDeleting(true);
     try {
-      const res = await deleteUploadedFile(fileDeleteId, deleteStudentsCheck);
+      const res = await deleteUploadedFile(fileDeleteId, true);
       if (res.data.success) {
-        toast.success(res.data.message || 'File record deleted successfully');
+        toast.success(res.data.message || 'File record and imported student details deleted successfully');
         setFileDeleteOpen(false);
         fetchUploadedFiles();
-        if (deleteStudentsCheck) {
-          fetchStudents();
-        }
+        fetchStudents();
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to delete file');
@@ -267,15 +291,15 @@ export default function StudentManagement() {
   };
 
   const columns = [
-    { key: 'registerNumber', label: 'Reg No', className: 'font-bold text-white' },
-    { key: 'name', label: 'Name' },
-    { key: 'department', label: 'Department', render: (row) => row.department?.code || '-' },
-    { key: 'year', label: 'Year', render: (row) => row.year || '-' },
-    { key: 'batch', label: 'Batch', render: (row) => row.batch || '-' },
+    { key: 'registerNumber', label: 'Reg No / ID', className: 'font-bold text-white font-mono' },
+    { key: 'email', label: 'Official Gmail ID', render: (row) => <span className="text-xs text-blue-400 font-semibold">{row.email || row.officialGmail || '-'}</span> },
+    { key: 'name', label: 'Student Name', className: 'font-medium text-slate-200' },
+    { key: 'department', label: 'Department', render: (row) => row.department?.code || row.department?.name || '-' },
+    { key: 'year', label: 'Year / Batch', render: (row) => `${row.year ? row.year + ' Yr' : ''} ${row.batch ? '(' + row.batch + ')' : ''}`.trim() || '-' },
     {
       key: 'status',
       label: 'Status',
-      render: (row) => <Badge text={row.status} type={row.status === 'Active' ? 'success' : 'danger'} />,
+      render: (row) => <Badge text={row.status || 'Active'} type={row.status === 'Active' ? 'success' : 'danger'} />,
     },
     {
       key: 'actions',
@@ -429,7 +453,7 @@ export default function StudentManagement() {
         <form onSubmit={handleSave} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="input-group">
-              <label className="input-label">Register Number</label>
+              <label className="input-label">Register Number *</label>
               <input
                 type="text"
                 value={regNo}
@@ -441,7 +465,7 @@ export default function StudentManagement() {
               />
             </div>
             <div className="input-group">
-              <label className="input-label">Student Full Name</label>
+              <label className="input-label">Student Full Name *</label>
               <input
                 type="text"
                 value={name}
@@ -455,12 +479,35 @@ export default function StudentManagement() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="input-group">
-              <label className="input-label">Email Address</label>
+              <label className="input-label">Official Gmail / Login Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="student@college.edu"
+                placeholder="student@gmail.com"
+                className="input-field"
+              />
+            </div>
+            <div className="input-group">
+              <label className="input-label">{editId ? 'New Password (Optional)' : 'Login Password'}</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={editId ? 'Leave blank to keep existing' : 'Defaults to DeptCode + RegNo'}
+                className="input-field"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="input-group">
+              <label className="input-label">Login Username (Optional)</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Defaults to Reg No"
                 className="input-field"
               />
             </div>
@@ -478,7 +525,7 @@ export default function StudentManagement() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="input-group sm:col-span-2">
-              <label className="input-label">Department</label>
+              <label className="input-label">Department *</label>
               <select
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
@@ -533,7 +580,7 @@ export default function StudentManagement() {
 
           {!editId && (
             <p className="text-[10px] text-gray-500 pt-2">
-              * Note: The student's initial password will be automatically set to their Register Number. They will be forced to change it on their first successful login.
+              🔒 Security Note: Passwords are securely hashed with bcrypt (12 rounds). Students can log in using their Username or Register Number.
             </p>
           )}
 
@@ -542,7 +589,7 @@ export default function StudentManagement() {
               Cancel
             </button>
             <button type="submit" disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving...' : 'Save Student'}
             </button>
           </div>
         </form>
@@ -554,8 +601,9 @@ export default function StudentManagement() {
           <div className="border-2 border-dashed border-white/10 rounded-xl p-8 flex flex-col items-center justify-center bg-dark-800/40">
             <FileSpreadsheet size={48} className="text-primary-400 mb-3" />
             <p className="text-sm text-gray-300 font-medium">Select Excel spreadsheet to upload</p>
-            <p className="text-xs text-gray-500 mt-1">Columns must include: registerNumber, name, department</p>
-            <p className="text-[10px] text-gray-600 mt-0.5">Other optional fields: email, year, batch, phone</p>
+            <p className="text-xs text-gray-400 mt-1">Required columns: registerNumber, name, department</p>
+            <p className="text-xs text-emerald-400 font-semibold mt-1">Optional credential columns: username, password</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">Other optional fields: email, year, batch, phone</p>
             <input
               type="file"
               accept=".xlsx, .xls"
@@ -566,8 +614,8 @@ export default function StudentManagement() {
           </div>
 
           <div className="flex items-center justify-between pt-4 border-t border-white/5">
-            <p className="text-[10px] text-amber-500">
-              * Note: Temporary password for newly imported students will be their Department Code (e.g. CSE).
+            <p className="text-[10px] text-emerald-400">
+              🔒 Security Note: Excel passwords are automatically encrypted with Bcrypt (12 rounds) during import.
             </p>
             <div className="flex gap-2">
               <button type="button" onClick={() => setExcelOpen(false)} className="btn-secondary">

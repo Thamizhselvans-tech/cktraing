@@ -16,4 +16,6 @@ export const downloadAttendanceReport = (params) =>
 export const downloadMarksReport = (params) =>
   api.get('/reports/marks/download', { params, responseType: 'blob' });
 
+export const sendAttendanceToPrincipal = (data) => api.post('/reports/send-principal', data);
+
 export const getAuditLogs = (params) => api.get('/audit-logs', { params });

@@ -1,4 +1,4 @@
-const AdminSchedule = require('../models/AdminSchedule.model');
+const firebaseDb = require('../services/firebaseDb.service');
 const catchAsync = require('../utils/catchAsync');
 const { sendSuccess, sendError, sendPaginated } = require('../utils/apiResponse');
 const { createAuditLog, getPagination } = require('../utils/helpers');
@@ -8,31 +8,37 @@ exports.getSchedules = catchAsync(async (req, res) => {
   const { type, status, month, year, startDate, endDate } = req.query;
   const { page: p, limit: l, skip } = getPagination(req.query);
 
-  const filter = {};
-  if (type) filter.type = type;
-  if (status) filter.status = status;
+  let schedules = await firebaseDb.getAll('admin_schedules');
+
+  if (type) schedules = schedules.filter(s => s.type === type);
+  if (status) schedules = schedules.filter(s => s.status === status);
+
   if (startDate && endDate) {
-    filter.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
+    const s = new Date(startDate);
+    const e = new Date(endDate);
+    schedules = schedules.filter(item => {
+      const d = new Date(item.date);
+      return d >= s && d <= e;
+    });
   } else if (month && year) {
     const start = new Date(year, month - 1, 1);
     const end = new Date(year, month, 0, 23, 59, 59);
-    filter.date = { $gte: start, $lte: end };
+    schedules = schedules.filter(item => {
+      const d = new Date(item.date);
+      return d >= start && d <= end;
+    });
   }
 
-  const [schedules, total] = await Promise.all([
-    AdminSchedule.find(filter)
-      .populate('createdBy', 'name username')
-      .sort({ date: 1, startTime: 1 })
-      .skip(skip)
-      .limit(l),
-    AdminSchedule.countDocuments(filter),
-  ]);
+  schedules.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-  return sendPaginated(res, 'Schedules fetched', schedules, p, l, total);
+  const total = schedules.length;
+  const paginated = schedules.slice(skip, skip + l);
+
+  return sendPaginated(res, 'Schedules fetched', paginated, p, l, total);
 });
 
 exports.createSchedule = catchAsync(async (req, res) => {
-  const schedule = await AdminSchedule.create({ ...req.body, createdBy: req.user.id });
+  const schedule = await firebaseDb.create('admin_schedules', { ...req.body, createdBy: req.user.id });
 
   await createAuditLog({
     action: AUDIT_ACTIONS.CREATE,
@@ -47,39 +53,37 @@ exports.createSchedule = catchAsync(async (req, res) => {
 });
 
 exports.updateSchedule = catchAsync(async (req, res) => {
-  const schedule = await AdminSchedule.findById(req.params.id);
+  const schedule = await firebaseDb.getById('admin_schedules', req.params.id);
   if (!schedule) return sendError(res, 404, 'Schedule not found.');
 
-  const previousData = schedule.toObject();
-  Object.assign(schedule, req.body);
-  await schedule.save();
+  const updated = await firebaseDb.update('admin_schedules', req.params.id, req.body);
 
   await createAuditLog({
     action: AUDIT_ACTIONS.UPDATE,
     entity: 'AdminSchedule',
-    entityId: schedule._id,
+    entityId: req.params.id,
     performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
     ipAddress: req.ip,
-    previousData,
-    description: `Updated admin schedule: '${schedule.title}'`,
+    previousData: schedule,
+    description: `Updated admin schedule: '${updated.title}'`,
   });
 
-  return sendSuccess(res, 200, 'Schedule updated', schedule);
+  return sendSuccess(res, 200, 'Schedule updated', updated);
 });
 
 exports.deleteSchedule = catchAsync(async (req, res) => {
-  const schedule = await AdminSchedule.findById(req.params.id);
+  const schedule = await firebaseDb.getById('admin_schedules', req.params.id);
   if (!schedule) return sendError(res, 404, 'Schedule not found.');
 
   await createAuditLog({
     action: AUDIT_ACTIONS.DELETE,
     entity: 'AdminSchedule',
-    entityId: schedule._id,
+    entityId: req.params.id,
     performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
     ipAddress: req.ip,
     description: `Deleted admin schedule: '${schedule.title}'`,
   });
 
-  await schedule.deleteOne();
+  await firebaseDb.remove('admin_schedules', req.params.id);
   return sendSuccess(res, 200, 'Schedule deleted.');
 });

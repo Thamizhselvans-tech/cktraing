@@ -1,5 +1,4 @@
-const Marks = require('../models/Marks.model');
-const Student = require('../models/Student.model');
+const firebaseDb = require('../services/firebaseDb.service');
 const catchAsync = require('../utils/catchAsync');
 const { sendSuccess, sendError, sendPaginated } = require('../utils/apiResponse');
 const { createAuditLog, getPagination } = require('../utils/helpers');
@@ -10,21 +9,46 @@ exports.getAllMarks = catchAsync(async (req, res) => {
   const { department, search } = req.query;
   const { page: p, limit: l, skip } = getPagination(req.query);
 
-  const filter = {};
-  if (department) filter.department = department;
+  let marks = await firebaseDb.getAll('marks');
 
-  let query = Marks.find(filter)
-    .populate({ path: 'student', select: 'name registerNumber department', match: search ? { $or: [{ name: { $regex: search, $options: 'i' } }, { registerNumber: { $regex: search, $options: 'i' } }] } : {} })
-    .populate('department', 'name code')
-    .populate('enteredBy', 'name username')
-    .populate('verifiedBy', 'name username')
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(l);
+  if (department) {
+    marks = marks.filter(m => m.departmentId === department);
+  }
 
-  const [marks, total] = await Promise.all([query, Marks.countDocuments(filter)]);
+  const students = await firebaseDb.getAll('students');
+  const depts = await firebaseDb.getAll('departments');
+  const coords = await firebaseDb.getAll('coordinators');
+  const admins = await firebaseDb.getAll('admins');
 
-  return sendPaginated(res, 'Marks fetched', marks, p, l, total);
+  const studentMap = {};
+  students.forEach(s => { studentMap[s._id] = s; });
+  const deptMap = {};
+  depts.forEach(d => { deptMap[d._id] = d; });
+  const userMap = {};
+  coords.forEach(c => { userMap[c._id] = c; });
+  admins.forEach(a => { userMap[a._id] = a; });
+
+  let populated = marks.map(m => ({
+    ...m,
+    student: m.studentId ? (studentMap[m.studentId] ? { _id: m.studentId, name: studentMap[m.studentId].name, registerNumber: studentMap[m.studentId].registerNumber, department: studentMap[m.studentId].departmentId } : null) : null,
+    department: m.departmentId ? (deptMap[m.departmentId] || null) : null,
+    enteredBy: m.enteredBy ? (userMap[m.enteredBy] || null) : null,
+    verifiedBy: m.verifiedBy ? (userMap[m.verifiedBy] || null) : null,
+  }));
+
+  if (search) {
+    const q = search.toLowerCase();
+    populated = populated.filter(m => 
+      m.student && ((m.student.name && m.student.name.toLowerCase().includes(q)) || (m.student.registerNumber && m.student.registerNumber.toLowerCase().includes(q)))
+    );
+  }
+
+  populated.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const total = populated.length;
+  const paginated = populated.slice(skip, skip + l);
+
+  return sendPaginated(res, 'Marks fetched', paginated, p, l, total);
 });
 
 // GET student marks
@@ -36,14 +60,19 @@ exports.getStudentMarks = catchAsync(async (req, res) => {
     return sendError(res, 403, 'You can only view your own marks.');
   }
 
-  const marks = await Marks.findOne({ student: studentId })
-    .populate('student', 'name registerNumber')
-    .populate('department', 'name code')
-    .populate('enteredBy', 'name username')
-    .populate('verifiedBy', 'name username');
+  const m = await firebaseDb.findOne('marks', r => r.studentId === studentId);
+  if (!m) return sendError(res, 404, 'No marks found for this student.');
 
-  if (!marks) return sendError(res, 404, 'No marks found for this student.');
-  return sendSuccess(res, 200, 'Marks fetched', marks);
+  const student = await firebaseDb.getById('students', studentId);
+  const dept = m.departmentId ? await firebaseDb.getById('departments', m.departmentId) : null;
+
+  const result = {
+    ...m,
+    student: student ? { _id: student._id, name: student.name, registerNumber: student.registerNumber } : null,
+    department: dept
+  };
+
+  return sendSuccess(res, 200, 'Marks fetched', result);
 });
 
 // GET department marks
@@ -51,16 +80,22 @@ exports.getDepartmentMarks = catchAsync(async (req, res) => {
   const { deptId } = req.params;
   const { page: p, limit: l, skip } = getPagination(req.query);
 
-  const [marks, total] = await Promise.all([
-    Marks.find({ department: deptId })
-      .populate('student', 'name registerNumber year batch')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(l),
-    Marks.countDocuments({ department: deptId }),
-  ]);
+  let marks = await firebaseDb.find('marks', m => m.departmentId === deptId);
+  const students = await firebaseDb.getAll('students');
+  const studentMap = {};
+  students.forEach(s => { studentMap[s._id] = s; });
 
-  return sendPaginated(res, 'Department marks fetched', marks, p, l, total);
+  const populated = marks.map(m => ({
+    ...m,
+    student: m.studentId ? (studentMap[m.studentId] ? { _id: m.studentId, name: studentMap[m.studentId].name, registerNumber: studentMap[m.studentId].registerNumber, year: studentMap[m.studentId].year, batch: studentMap[m.studentId].batch } : null) : null
+  }));
+
+  populated.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const total = populated.length;
+  const paginated = populated.slice(skip, skip + l);
+
+  return sendPaginated(res, 'Department marks fetched', paginated, p, l, total);
 });
 
 // POST create/update marks
@@ -71,107 +106,121 @@ exports.createOrUpdateMarks = catchAsync(async (req, res) => {
     return sendError(res, 400, 'Student and department are required.');
   }
 
-  const studentDoc = await Student.findById(student);
+  const studentDoc = await firebaseDb.getById('students', student);
   if (!studentDoc) return sendError(res, 404, 'Student not found.');
 
-  // Check if marks exist already
-  let marks = await Marks.findOne({ student });
+  const mTest = Number(mockTest) || 0;
+  const apt = Number(aptitude) || 0;
+  const tech = Number(technical) || 0;
+  const totalMarks = mTest + apt + tech;
+  const avgMarks = parseFloat((totalMarks / 3).toFixed(2));
 
-  if (marks) {
-    if (marks.isVerified) {
+  let existing = await firebaseDb.findOne('marks', m => m.studentId === student);
+
+  if (existing) {
+    if (existing.isVerified) {
       return sendError(res, 403, 'Marks are verified and locked. Admin must unlock before editing.');
     }
-    const previousData = marks.toObject();
 
-    if (mockTest !== undefined) marks.mockTest = mockTest;
-    if (aptitude !== undefined) marks.aptitude = aptitude;
-    if (technical !== undefined) marks.technical = technical;
-    marks.enteredBy = req.user.id;
-    await marks.save();
+    const previousData = { ...existing };
+
+    const updated = await firebaseDb.update('marks', existing._id, {
+      mockTest: mTest,
+      aptitude: apt,
+      technical: tech,
+      total: totalMarks,
+      average: avgMarks,
+      enteredBy: req.user.id,
+    });
 
     await createAuditLog({
       action: AUDIT_ACTIONS.UPDATE,
       entity: AUDIT_ENTITIES.MARKS,
-      entityId: marks._id,
+      entityId: existing._id,
       performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
       ipAddress: req.ip,
       previousData,
-      newData: { mockTest: marks.mockTest, aptitude: marks.aptitude, technical: marks.technical },
+      newData: { mockTest: mTest, aptitude: apt, technical: tech, total: totalMarks, average: avgMarks },
       description: `Updated marks for student ${studentDoc.registerNumber}`,
     });
 
-    return sendSuccess(res, 200, 'Marks updated', marks);
+    return sendSuccess(res, 200, 'Marks updated', updated);
   }
 
-  marks = await Marks.create({
-    student,
-    department,
-    mockTest: mockTest || 0,
-    aptitude: aptitude || 0,
-    technical: technical || 0,
+  const created = await firebaseDb.create('marks', {
+    studentId: student,
+    departmentId: department,
+    mockTest: mTest,
+    aptitude: apt,
+    technical: tech,
+    total: totalMarks,
+    average: avgMarks,
     enteredBy: req.user.id,
+    isVerified: false
   });
 
   await createAuditLog({
     action: AUDIT_ACTIONS.CREATE,
     entity: AUDIT_ENTITIES.MARKS,
-    entityId: marks._id,
+    entityId: created._id,
     performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
     ipAddress: req.ip,
     description: `Created marks for student ${studentDoc.registerNumber}`,
   });
 
-  return sendSuccess(res, 201, 'Marks created', marks);
+  return sendSuccess(res, 201, 'Marks created', created);
 });
 
 // POST verify/lock marks (Admin only)
 exports.verifyMarks = catchAsync(async (req, res) => {
-  const marks = await Marks.findById(req.params.id);
+  const marks = await firebaseDb.getById('marks', req.params.id);
   if (!marks) return sendError(res, 404, 'Marks not found.');
 
   if (marks.isVerified) {
     return sendError(res, 400, 'Marks are already verified.');
   }
 
-  marks.isVerified = true;
-  marks.verifiedBy = req.user.id;
-  marks.verifiedAt = new Date();
-  await marks.save();
+  const updated = await firebaseDb.update('marks', req.params.id, {
+    isVerified: true,
+    verifiedBy: req.user.id,
+    verifiedAt: new Date().toISOString()
+  });
 
   await createAuditLog({
     action: AUDIT_ACTIONS.VERIFY,
     entity: AUDIT_ENTITIES.MARKS,
-    entityId: marks._id,
+    entityId: req.params.id,
     performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
     ipAddress: req.ip,
-    description: `Admin verified marks ${marks._id}`,
+    description: `Admin verified marks ${req.params.id}`,
   });
 
-  return sendSuccess(res, 200, 'Marks verified and locked.', marks);
+  return sendSuccess(res, 200, 'Marks verified and locked.', updated);
 });
 
 // POST unlock marks (Admin only)
 exports.unlockMarks = catchAsync(async (req, res) => {
-  const marks = await Marks.findById(req.params.id);
+  const marks = await firebaseDb.getById('marks', req.params.id);
   if (!marks) return sendError(res, 404, 'Marks not found.');
 
   if (!marks.isVerified) {
     return sendError(res, 400, 'Marks are not locked.');
   }
 
-  marks.isVerified = false;
-  marks.unlockedBy = req.user.id;
-  marks.unlockedAt = new Date();
-  await marks.save();
+  const updated = await firebaseDb.update('marks', req.params.id, {
+    isVerified: false,
+    unlockedBy: req.user.id,
+    unlockedAt: new Date().toISOString()
+  });
 
   await createAuditLog({
     action: AUDIT_ACTIONS.UNLOCK,
     entity: AUDIT_ENTITIES.MARKS,
-    entityId: marks._id,
+    entityId: req.params.id,
     performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
     ipAddress: req.ip,
-    description: `Admin unlocked marks ${marks._id}`,
+    description: `Admin unlocked marks ${req.params.id}`,
   });
 
-  return sendSuccess(res, 200, 'Marks unlocked for editing.', marks);
+  return sendSuccess(res, 200, 'Marks unlocked for editing.', updated);
 });

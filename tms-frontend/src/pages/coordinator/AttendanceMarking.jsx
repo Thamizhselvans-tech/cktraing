@@ -4,7 +4,7 @@ import PageHeader from '../../components/common/PageHeader';
 import { useAuth } from '../../context/AuthContext';
 import { getStudentsByDept } from '../../api/students.api';
 import { getDepartmentAttendance, bulkMarkAttendance } from '../../api/attendance.api';
-import { Check, X, ShieldAlert } from 'lucide-react';
+import { Check, X, ShieldAlert, CheckCircle2, XCircle, CheckSquare, Square } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function AttendanceMarking() {
@@ -17,12 +17,14 @@ export default function AttendanceMarking() {
   // Local Attendance State: { [studentId]: { morningSession: bool, afternoonSession: bool, id?: string, isLocked?: boolean } }
   const [attendanceState, setAttendanceState] = useState({});
 
+  const deptId = typeof user?.department === 'object' ? user?.department?._id : user?.department;
+
   const fetchAttendanceData = useCallback(async () => {
-    if (!user?.department?._id) return;
+    if (!deptId) return;
     setLoading(true);
     try {
       // 1. Fetch all active students in department
-      const studentsRes = await getStudentsByDept(user.department._id, { limit: 100 });
+      const studentsRes = await getStudentsByDept(deptId, { limit: 100 });
       let studentList = [];
       if (studentsRes.data.success) {
         studentList = studentsRes.data.data;
@@ -30,8 +32,8 @@ export default function AttendanceMarking() {
       }
 
       // 2. Fetch existing attendance for this date
-      const attendanceRes = await getDepartmentAttendance(user.department._id, { date });
-      const attendanceRecords = attendanceRes.data.data;
+      const attendanceRes = await getDepartmentAttendance(deptId, { date });
+      const attendanceRecords = attendanceRes.data.data || [];
 
       // 3. Map to state
       const initialMap = {};
@@ -62,7 +64,7 @@ export default function AttendanceMarking() {
     } finally {
       setLoading(false);
     }
-  }, [user, date]);
+  }, [deptId, date]);
 
   useEffect(() => {
     fetchAttendanceData();
@@ -88,7 +90,86 @@ export default function AttendanceMarking() {
     }));
   };
 
+  // Mark All Present (100%)
+  const handleMarkAllPresent = () => {
+    const isTodaySelected = date === new Date().toISOString().split('T')[0];
+    if (!isTodaySelected) {
+      return toast.error('Coordinators can only edit same-day attendance.');
+    }
+    if (students.length === 0) return;
+
+    setAttendanceState((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((studentId) => {
+        if (!next[studentId]?.isLocked) {
+          next[studentId] = {
+            ...next[studentId],
+            morningSession: true,
+            afternoonSession: true,
+          };
+        }
+      });
+      return next;
+    });
+    toast.success('Marked all students as Present (100%)!');
+  };
+
+  // Mark All Absent (0%)
+  const handleMarkAllAbsent = () => {
+    const isTodaySelected = date === new Date().toISOString().split('T')[0];
+    if (!isTodaySelected) {
+      return toast.error('Coordinators can only edit same-day attendance.');
+    }
+    if (students.length === 0) return;
+
+    setAttendanceState((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((studentId) => {
+        if (!next[studentId]?.isLocked) {
+          next[studentId] = {
+            ...next[studentId],
+            morningSession: false,
+            afternoonSession: false,
+          };
+        }
+      });
+      return next;
+    });
+    toast.success('Marked all students as Absent (0%)!');
+  };
+
+  // Toggle All for Morning or Afternoon session
+  const handleToggleAllSession = (session) => {
+    const isTodaySelected = date === new Date().toISOString().split('T')[0];
+    if (!isTodaySelected) {
+      return toast.error('Coordinators can only edit same-day attendance.');
+    }
+    if (students.length === 0) return;
+
+    const allTrue = students.every((s) => attendanceState[s._id]?.[session]);
+
+    setAttendanceState((prev) => {
+      const next = { ...prev };
+      students.forEach((s) => {
+        if (!next[s._id]?.isLocked) {
+          next[s._id] = {
+            ...next[s._id],
+            [session]: !allTrue,
+          };
+        }
+      });
+      return next;
+    });
+
+    const sessionLabel = session === 'morningSession' ? 'Morning' : 'Afternoon';
+    toast.success(!allTrue ? `Marked all ${sessionLabel} sessions as Present` : `Marked all ${sessionLabel} sessions as Absent`);
+  };
+
   const handleSave = async () => {
+    if (!deptId) {
+      return toast.error('Department ID missing for current coordinator.');
+    }
+
     setSaving(true);
     try {
       const payloadData = Object.keys(attendanceState).map((studentId) => ({
@@ -98,13 +179,13 @@ export default function AttendanceMarking() {
       }));
 
       const res = await bulkMarkAttendance({
-        department: user.department._id,
+        department: deptId,
         date,
         attendanceData: payloadData,
       });
 
       if (res.data.success) {
-        toast.success(res.data.message || 'Attendance saved successfully!');
+        toast.success('🎉 Attendance marked & saved successfully! Admin can now view live records.', { duration: 4000 });
         fetchAttendanceData();
       }
     } catch (err) {
@@ -124,20 +205,48 @@ export default function AttendanceMarking() {
 
   const isTodaySelected = date === new Date().toISOString().split('T')[0];
 
+  const allMorningPresent = students.length > 0 && students.every((s) => attendanceState[s._id]?.morningSession);
+  const allAfternoonPresent = students.length > 0 && students.every((s) => attendanceState[s._id]?.afternoonSession);
+
   return (
     <CoordinatorLayout>
       <PageHeader
         title="Attendance Marking"
         subtitle="Mark morning and afternoon training presence for students"
         actions={
-          <button
-            onClick={handleSave}
-            disabled={saving || !isTodaySelected || students.length === 0}
-            className="btn-success flex items-center gap-2 disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <Check size={16} />
-            <span>{saving ? 'Saving...' : 'Save Attendance'}</span>
-          </button>
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* Mark All Present */}
+            <button
+              onClick={handleMarkAllPresent}
+              disabled={!isTodaySelected || students.length === 0}
+              className="btn-success flex items-center gap-1.5 !px-3.5 !py-2 text-xs font-semibold disabled:opacity-40 disabled:pointer-events-none shadow-glow-emerald/20"
+              title="Mark all students Present (Morning & Afternoon)"
+            >
+              <CheckCircle2 size={16} />
+              <span>Mark All Present</span>
+            </button>
+
+            {/* Mark All Absent */}
+            <button
+              onClick={handleMarkAllAbsent}
+              disabled={!isTodaySelected || students.length === 0}
+              className="btn-secondary border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 flex items-center gap-1.5 !px-3.5 !py-2 text-xs font-semibold disabled:opacity-40 disabled:pointer-events-none"
+              title="Mark all students Absent"
+            >
+              <XCircle size={16} />
+              <span>Mark All Absent</span>
+            </button>
+
+            {/* Save Attendance */}
+            <button
+              onClick={handleSave}
+              disabled={saving || !isTodaySelected || students.length === 0}
+              className="btn-primary flex items-center gap-2 !px-4 !py-2 text-xs font-semibold disabled:opacity-40 disabled:pointer-events-none shadow-glow-blue"
+            >
+              <Check size={16} />
+              <span>{saving ? 'Saving...' : 'Save Attendance'}</span>
+            </button>
+          </div>
         }
       />
 
@@ -149,7 +258,7 @@ export default function AttendanceMarking() {
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            max={new Date().toISOString().split('T')[0]} // Block future dates
+            max={new Date().toISOString().split('T')[0]}
             className="input-field"
           />
         </div>
@@ -171,8 +280,30 @@ export default function AttendanceMarking() {
             <tr>
               <th className="w-32">Register No</th>
               <th>Student Name</th>
-              <th className="w-32 text-center">Morning</th>
-              <th className="w-32 text-center">Afternoon</th>
+              <th className="w-36 text-center">
+                <button
+                  type="button"
+                  onClick={() => handleToggleAllSession('morningSession')}
+                  disabled={!isTodaySelected || students.length === 0}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold uppercase hover:text-emerald-400 transition-colors disabled:opacity-50"
+                  title="Click to toggle all Morning sessions"
+                >
+                  {allMorningPresent ? <CheckSquare size={14} className="text-emerald-400" /> : <Square size={14} className="text-gray-400" />}
+                  <span>Morning</span>
+                </button>
+              </th>
+              <th className="w-36 text-center">
+                <button
+                  type="button"
+                  onClick={() => handleToggleAllSession('afternoonSession')}
+                  disabled={!isTodaySelected || students.length === 0}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold uppercase hover:text-emerald-400 transition-colors disabled:opacity-50"
+                  title="Click to toggle all Afternoon sessions"
+                >
+                  {allAfternoonPresent ? <CheckSquare size={14} className="text-emerald-400" /> : <Square size={14} className="text-gray-400" />}
+                  <span>Afternoon</span>
+                </button>
+              </th>
               <th className="w-32 text-center">Percentage</th>
             </tr>
           </thead>

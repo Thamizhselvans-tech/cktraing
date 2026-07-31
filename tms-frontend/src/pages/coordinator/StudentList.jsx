@@ -17,17 +17,19 @@ export default function StudentList() {
   const [totalPages, setTotalPages] = useState(1);
 
   const fetchStudents = useCallback(async () => {
-    if (!user?.department?._id) return;
+    const deptId = typeof user?.department === 'object' ? user?.department?._id : user?.department;
+    if (!deptId) return;
+
     setLoading(true);
     try {
-      const { data } = await getStudentsByDept(user.department._id, {
+      const { data } = await getStudentsByDept(deptId, {
         search,
         page,
         limit: 10,
       });
       if (data.success) {
-        setStudents(data.data);
-        setTotalPages(data.pagination.totalPages);
+        setStudents(data.data || []);
+        setTotalPages(data.pagination?.totalPages || 1);
       }
     } catch {
       toast.error('Failed to load students list');
@@ -54,11 +56,13 @@ export default function StudentList() {
     },
   ];
 
+  const deptName = typeof user?.department === 'object' ? user?.department?.name : 'department';
+
   return (
     <CoordinatorLayout>
       <PageHeader
         title="Student Directory"
-        subtitle={`Directory list of students registered in the ${user?.department?.name || 'department'}`}
+        subtitle={`Directory list of students registered in the ${deptName || 'department'}`}
       />
 
       <div className="mb-6">

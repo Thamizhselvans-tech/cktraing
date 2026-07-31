@@ -1,48 +1,62 @@
-const Student = require('../models/Student.model');
-const Department = require('../models/Department.model');
-const UploadedFile = require('../models/UploadedFile.model');
-const Attendance = require('../models/Attendance.model');
-const Marks = require('../models/Marks.model');
-const StudentFeedback = require('../models/StudentFeedback.model');
+const firebaseDb = require('../services/firebaseDb.service');
 const catchAsync = require('../utils/catchAsync');
 const { sendSuccess, sendError, sendPaginated } = require('../utils/apiResponse');
 const { createAuditLog, getPagination } = require('../utils/helpers');
-const { AUDIT_ACTIONS, AUDIT_ENTITIES, STATUS, ROLES } = require('../config/constants');
+const { AUDIT_ACTIONS, AUDIT_ENTITIES, STATUS, ROLES, BCRYPT_ROUNDS } = require('../config/constants');
 const XLSX = require('xlsx');
 const bcrypt = require('bcryptjs');
 
 // GET all students
 exports.getAllStudents = catchAsync(async (req, res) => {
-  const { search, department, status: statusFilter, year, page, limit } = req.query;
+  const { search, department, status: statusFilter, year } = req.query;
   const { page: p, limit: l, skip } = getPagination(req.query);
 
-  const filter = {};
+  let rawStudents = await firebaseDb.getAll('students');
+
+  // Populate department info for all students first so search & filtering work on department code & name
+  let students = await firebaseDb.populateDepartmentMany(rawStudents);
+
   if (statusFilter && statusFilter !== 'all') {
-    filter.status = statusFilter;
+    students = students.filter(s => (s.status || 'Active') === statusFilter);
   } else if (!statusFilter) {
-    filter.status = STATUS.ACTIVE;
+    students = students.filter(s => (s.status || 'Active') === STATUS.ACTIVE);
   }
-  if (department) filter.department = department;
-  if (year) filter.year = Number(year);
+
+  if (department && department !== 'all') {
+    students = students.filter(s => 
+      s.departmentId === department ||
+      s.department?._id === department ||
+      (s.department?.code && s.department.code.toLowerCase() === department.toLowerCase()) ||
+      (s.department?.name && s.department.name.toLowerCase() === department.toLowerCase())
+    );
+  }
+
+  if (year) {
+    students = students.filter(s => Number(s.year) === Number(year));
+  }
+
   if (search) {
-    filter.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { registerNumber: { $regex: search, $options: 'i' } },
-      { email: { $regex: search, $options: 'i' } },
-    ];
+    const q = search.toLowerCase().trim();
+    students = students.filter(s =>
+      (s.name && s.name.toLowerCase().includes(q)) ||
+      (s.registerNumber && s.registerNumber.toLowerCase().includes(q)) ||
+      (s.email && s.email.toLowerCase().includes(q)) ||
+      (s.officialGmail && s.officialGmail.toLowerCase().includes(q)) ||
+      (s.username && s.username.toLowerCase().includes(q)) ||
+      (s.batch && s.batch.toLowerCase().includes(q)) ||
+      (s.department?.code && s.department.code.toLowerCase().includes(q)) ||
+      (s.department?.name && s.department.name.toLowerCase().includes(q))
+    );
   }
 
-  const [students, total] = await Promise.all([
-    Student.find(filter)
-      .populate('department', 'name code')
-      .sort({ name: 1 })
-      .skip(skip)
-      .limit(l)
-      .select('-password'),
-    Student.countDocuments(filter),
-  ]);
+  students.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-  return sendPaginated(res, 'Students fetched', students, p, l, total);
+  const sanitized = students.map(({ password, ...rest }) => rest);
+
+  const total = sanitized.length;
+  const paginated = sanitized.slice(skip, skip + l);
+
+  return sendPaginated(res, 'Students fetched', paginated, p, l, total);
 });
 
 // GET student by ID
@@ -50,15 +64,15 @@ exports.getStudent = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { role, id: userId } = req.user;
 
-  // Students can only view their own data
   if (role === ROLES.STUDENT && userId.toString() !== id.toString()) {
     return sendError(res, 403, 'You can only view your own profile.');
   }
 
-  const student = await Student.findById(id)
-    .populate('department', 'name code')
-    .select('-password');
-  if (!student) return sendError(res, 404, 'Student not found.');
+  const rawStudent = await firebaseDb.getById('students', id);
+  if (!rawStudent) return sendError(res, 404, 'Student not found.');
+
+  const student = await firebaseDb.populateDepartment(rawStudent);
+  delete student.password;
 
   return sendSuccess(res, 200, 'Student fetched', student);
 });
@@ -66,49 +80,85 @@ exports.getStudent = catchAsync(async (req, res) => {
 // GET students by department
 exports.getStudentsByDepartment = catchAsync(async (req, res) => {
   const { deptId } = req.params;
-  const { page: p, limit: l, skip } = getPagination(req.query);
+  const { page: p, limit: l } = getPagination(req.query);
 
-  const [students, total] = await Promise.all([
-    Student.find({ department: deptId, status: STATUS.ACTIVE })
-      .populate('department', 'name code')
-      .sort({ name: 1 })
-      .skip(skip)
-      .limit(l)
-      .select('-password'),
-    Student.countDocuments({ department: deptId, status: STATUS.ACTIVE }),
-  ]);
+  if (!deptId || deptId === 'undefined' || deptId === 'null') {
+    return sendPaginated(res, 'Students fetched', [], 1, l, 0);
+  }
 
-  return sendPaginated(res, 'Students fetched', students, p, l, total);
+  const dept = await firebaseDb.getById('departments', deptId);
+  const deptCode = dept ? dept.code?.toLowerCase() : null;
+  const deptName = dept ? dept.name?.toLowerCase() : null;
+
+  let students = await firebaseDb.find('students', s => {
+    const isDeptMatch = s.departmentId === deptId || 
+                        (deptCode && s.departmentId?.toLowerCase() === deptCode) ||
+                        (deptName && s.departmentId?.toLowerCase() === deptName);
+    return isDeptMatch && (s.status || 'Active') === STATUS.ACTIVE;
+  });
+
+  const { search } = req.query;
+  if (search) {
+    const q = search.toLowerCase();
+    students = students.filter(s =>
+      (s.name && s.name.toLowerCase().includes(q)) ||
+      (s.registerNumber && s.registerNumber.toLowerCase().includes(q)) ||
+      (s.email && s.email.toLowerCase().includes(q))
+    );
+  }
+
+  students.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  const populated = await firebaseDb.populateDepartmentMany(students);
+  const sanitized = populated.map(({ password, ...rest }) => rest);
+
+  const total = sanitized.length;
+  const page = Math.max(1, parseInt(p) || 1);
+  const skip = (page - 1) * l;
+  const paginated = sanitized.slice(skip, skip + l);
+
+  return sendPaginated(res, 'Students fetched', paginated, page, l, total);
 });
 
 // POST create student
 exports.createStudent = catchAsync(async (req, res) => {
-  const { registerNumber, name, email, department, year, batch, phone } = req.body;
+  const { registerNumber, username, name, email, department, year, batch, phone, password } = req.body;
 
   if (!registerNumber || !name || !department) {
     return sendError(res, 400, 'Register number, name, and department are required.');
   }
 
-  const existing = await Student.findOne({ registerNumber });
+  const upperRegNo = registerNumber.trim().toUpperCase();
+  const studentUsername = (username || registerNumber).trim();
+
+  const existing = await firebaseDb.findOne('students', s => 
+    s.registerNumber?.toUpperCase() === upperRegNo || 
+    (username && s.username?.toLowerCase() === studentUsername.toLowerCase())
+  );
   if (existing) {
-    return sendError(res, 409, `Student with register number '${registerNumber}' already exists.`);
+    return sendError(res, 409, `Student with register number or username '${registerNumber}' already exists.`);
   }
 
-  const dept = await Department.findById(department);
-  if (!dept || dept.status === STATUS.INACTIVE) {
+  const dept = await firebaseDb.getById('departments', department);
+  if (!dept || (dept.status || 'Active') === STATUS.INACTIVE) {
     return sendError(res, 404, 'Department not found or inactive.');
   }
 
-  const student = await Student.create({
-    registerNumber,
+  const defaultPassword = password || `${dept.code}${upperRegNo}`;
+  const hashedPassword = await bcrypt.hash(defaultPassword, BCRYPT_ROUNDS);
+
+  const student = await firebaseDb.create('students', {
+    registerNumber: upperRegNo,
+    username: studentUsername,
+    password: hashedPassword,
     name,
-    email,
-    password: dept.code.toUpperCase() + registerNumber.trim().toUpperCase(), // Default password = Department Code + Register Number
-    mustChangePassword: true,
-    department,
-    year,
-    batch,
-    phone,
+    email: email || '',
+    departmentId: department,
+    year: Number(year) || 1,
+    batch: batch || '',
+    phone: phone || '',
+    status: STATUS.ACTIVE,
+    mustChangePassword: !password,
   });
 
   await createAuditLog({
@@ -117,62 +167,61 @@ exports.createStudent = catchAsync(async (req, res) => {
     entityId: student._id,
     performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
     ipAddress: req.ip,
-    description: `Created student '${name}' (${registerNumber})`,
+    description: `Created student '${name}' (${upperRegNo})`,
   });
 
-  const result = await Student.findById(student._id)
-    .populate('department', 'name code')
-    .select('-password');
+  const result = await firebaseDb.populateDepartment(student);
+  delete result.password;
   return sendSuccess(res, 201, 'Student created successfully', result);
 });
 
 // PUT update student
 exports.updateStudent = catchAsync(async (req, res) => {
-  const { name, email, department, year, batch, phone, status } = req.body;
-  const student = await Student.findById(req.params.id);
+  const { username, name, email, department, year, batch, phone, status, password } = req.body;
+  const student = await firebaseDb.getById('students', req.params.id);
   if (!student) return sendError(res, 404, 'Student not found.');
 
-  const previousData = student.toObject();
+  const updates = {};
+  if (username) updates.username = username.trim();
+  if (name) updates.name = name;
+  if (email !== undefined) updates.email = email;
+  if (department) updates.departmentId = department;
+  if (year) updates.year = Number(year);
+  if (batch) updates.batch = batch;
+  if (phone !== undefined) updates.phone = phone;
+  if (status) updates.status = status;
+  if (password) {
+    updates.password = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  }
 
-  if (name) student.name = name;
-  if (email !== undefined) student.email = email;
-  if (department) student.department = department;
-  if (year !== undefined) student.year = year;
-  if (batch !== undefined) student.batch = batch;
-  if (phone !== undefined) student.phone = phone;
-  if (status) student.status = status;
-
-  await student.save();
+  const updated = await firebaseDb.update('students', req.params.id, updates);
 
   await createAuditLog({
     action: AUDIT_ACTIONS.UPDATE,
     entity: AUDIT_ENTITIES.STUDENT,
-    entityId: student._id,
+    entityId: req.params.id,
     performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
     ipAddress: req.ip,
-    previousData,
-    newData: student.toObject(),
-    description: `Updated student '${student.name}' (${student.registerNumber})`,
+    previousData: student,
+    description: `Updated student '${updated.name}' (${updated.registerNumber})`,
   });
 
-  const result = await Student.findById(student._id)
-    .populate('department', 'name code')
-    .select('-password');
+  const result = await firebaseDb.populateDepartment(updated);
+  delete result.password;
   return sendSuccess(res, 200, 'Student updated successfully', result);
 });
 
 // DELETE (soft delete) student
 exports.deleteStudent = catchAsync(async (req, res) => {
-  const student = await Student.findById(req.params.id);
+  const student = await firebaseDb.getById('students', req.params.id);
   if (!student) return sendError(res, 404, 'Student not found.');
 
-  student.status = STATUS.INACTIVE;
-  await student.save();
+  await firebaseDb.update('students', req.params.id, { status: STATUS.INACTIVE });
 
   await createAuditLog({
     action: AUDIT_ACTIONS.DELETE,
     entity: AUDIT_ENTITIES.STUDENT,
-    entityId: student._id,
+    entityId: req.params.id,
     performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
     ipAddress: req.ip,
     description: `Soft-deleted student '${student.name}' (${student.registerNumber})`,
@@ -181,285 +230,202 @@ exports.deleteStudent = catchAsync(async (req, res) => {
   return sendSuccess(res, 200, 'Student deactivated successfully.');
 });
 
-// POST upload students via Excel
+// GET uploaded excel files history
+exports.getUploadedFiles = catchAsync(async (req, res) => {
+  const { page: p, limit: l, skip } = getPagination(req.query);
+  let files = await firebaseDb.getAll('excel_uploads');
+  files.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  const total = files.length;
+  const paginated = files.slice(skip, skip + l);
+
+  return sendPaginated(res, 'Uploaded files fetched', paginated, p, l, total);
+});
+
+// DELETE uploaded file history (automatically deletes imported students)
+exports.deleteUploadedFile = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const deleteStudents = req.query.deleteStudents !== 'false';
+
+  const fileDoc = await firebaseDb.getById('excel_uploads', id);
+  if (!fileDoc) return sendError(res, 404, 'Uploaded file record not found.');
+
+  let deletedStudentsCount = 0;
+  if (deleteStudents && fileDoc.importedStudentIds?.length) {
+    for (const sId of fileDoc.importedStudentIds) {
+      await firebaseDb.remove('students', sId);
+      deletedStudentsCount++;
+    }
+  }
+
+  await firebaseDb.remove('excel_uploads', id);
+
+  await createAuditLog({
+    action: AUDIT_ACTIONS.DELETE,
+    entity: 'ExcelUpload',
+    entityId: id,
+    performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
+    ipAddress: req.ip,
+    description: `Deleted uploaded file record ${id} along with ${deletedStudentsCount} imported students`,
+  });
+
+  return sendSuccess(res, 200, `Uploaded file and ${deletedStudentsCount} imported student details deleted successfully.`);
+});
+
+// POST upload students Excel
 exports.uploadStudentsExcel = catchAsync(async (req, res) => {
   if (!req.file) return sendError(res, 400, 'Please upload an Excel file.');
 
-  // Parse Excel
   const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
   const sheetName = workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+  const sheet = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet);
 
   if (rows.length === 0) {
-    return sendError(res, 400, 'Excel file is empty or has no data rows.');
+    return sendError(res, 400, 'Excel file is empty.');
   }
 
-  // Normalize row keys to handle header case and spacing variation
-  const normalizedRows = rows.map((row) => {
-    const normalized = {};
-    Object.keys(row).forEach((key) => {
-      const cleanKey = key.trim().toLowerCase().replace(/[\s_-]/g, '');
-      if (cleanKey === 'registernumber' || cleanKey === 'regno' || cleanKey === 'regnumber' || cleanKey === 'registerno') {
-        normalized.registerNumber = row[key];
-      } else if (cleanKey === 'name' || cleanKey === 'studentname' || cleanKey === 'fullname') {
-        normalized.name = row[key];
-      } else if (cleanKey === 'department' || cleanKey === 'dept' || cleanKey === 'departmentname') {
-        normalized.department = row[key];
-      } else if (cleanKey === 'email' || cleanKey === 'emailaddress') {
-        normalized.email = row[key];
-      } else if (cleanKey === 'year') {
-        normalized.year = row[key];
-      } else if (cleanKey === 'batch') {
-        normalized.batch = row[key];
-      } else if (cleanKey === 'phone' || cleanKey === 'phonenumber' || cleanKey === 'mobile' || cleanKey === 'mobilenumber') {
-        normalized.phone = row[key];
-      } else {
-        normalized[key] = row[key];
-      }
-    });
-    return normalized;
-  });
+  const results = { total: rows.length, success: 0, failed: 0, errors: [] };
+  const importedStudentIds = [];
 
-  // Required columns validation
-  const requiredCols = ['registerNumber', 'name', 'department'];
-  const headers = Object.keys(normalizedRows[0]);
-  const missingCols = requiredCols.filter((col) => !headers.includes(col));
-  if (missingCols.length > 0) {
-    return sendError(
-      res,
-      400,
-      `Missing required columns: ${missingCols.join(', ')}. Required: registerNumber, name, department`
-    );
-  }
-
-  // Cache departments by name/code for quick lookup
-  const departments = await Department.find({ status: STATUS.ACTIVE });
+  const existingDepts = await firebaseDb.getAll('departments');
   const deptMap = {};
-  const deptCodeMap = {};
-  departments.forEach((d) => {
-    deptMap[d.name.toLowerCase()] = d._id;
-    deptMap[d.code.toLowerCase()] = d._id;
-    deptCodeMap[d._id.toString()] = d.code.toUpperCase();
+  existingDepts.forEach(d => {
+    deptMap[d.code?.toUpperCase()] = d._id;
+    deptMap[d.name?.toUpperCase()] = d._id;
   });
 
-  const results = {
-    total: normalizedRows.length,
-    success: 0,
-    skipped: 0,
-    failed: 0,
-    errors: [],
-  };
-  const studentsToInsert = [];
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
+    const rowNum = idx + 2;
 
-  for (let i = 0; i < normalizedRows.length; i++) {
-    const row = normalizedRows[i];
-    const rowNum = i + 2; // Excel row number (1-indexed + header)
-
-    const regNo = String(row.registerNumber || '').trim();
-    const name = String(row.name || '').trim();
-    const deptInput = String(row.department || '').trim();
-    const deptInputLower = deptInput.toLowerCase();
-
-    // Validate required fields
-    if (!regNo || !name || !deptInput) {
-      results.failed++;
-      results.errors.push({ row: rowNum, registerNumber: regNo, reason: 'Missing required fields (registerNumber, name, department)' });
-      continue;
-    }
-
-    // Resolve or Auto-create department
-    let deptId = deptMap[deptInputLower];
-    if (!deptId) {
-      try {
-        const newDeptCode = deptInput.replace(/[\s_-]/g, '').toUpperCase().substring(0, 10);
-        let existingDept = await Department.findOne({ code: newDeptCode });
-        if (!existingDept) {
-          existingDept = await Department.create({
-            name: deptInput,
-            code: newDeptCode,
-            description: `Automatically created during student excel import`,
-            status: STATUS.ACTIVE,
-          });
-
-          await createAuditLog({
-            action: AUDIT_ACTIONS.CREATE,
-            entity: AUDIT_ENTITIES.DEPARTMENT,
-            entityId: existingDept._id,
-            performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
-            ipAddress: req.ip,
-            description: `Automatically created department '${existingDept.name}' during Excel upload`,
-          });
+    // Flexible Excel column extraction helper
+    const getRowVal = (keys) => {
+      for (const k of Object.keys(row)) {
+        const cleanK = k.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        for (const target of keys) {
+          const cleanTarget = target.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (cleanK === cleanTarget) {
+            return String(row[k] || '').trim();
+          }
         }
-        deptId = existingDept._id;
-        deptMap[deptInputLower] = deptId;
-        deptMap[newDeptCode.toLowerCase()] = deptId;
-        deptCodeMap[deptId.toString()] = newDeptCode;
-      } catch (err) {
-        results.failed++;
-        results.errors.push({ row: rowNum, registerNumber: regNo, reason: `Failed to auto-create department '${deptInput}': ${err.message}` });
-        continue;
       }
-    }
-
-    // Check for duplicates within upload
-    if (studentsToInsert.some((s) => s.registerNumber === regNo)) {
-      results.skipped++;
-      results.errors.push({ row: rowNum, registerNumber: regNo, reason: 'Duplicate register number within upload file' });
-      continue;
-    }
-
-    const parseYear = (val) => {
-      if (!val) return undefined;
-      const num = parseInt(val, 10);
-      if (!isNaN(num) && num >= 1 && num <= 4) {
-        return num;
-      }
-      const str = String(val).toLowerCase().trim();
-      if (str.includes('first') || str.includes('one') || str === 'i' || str === '1st') return 1;
-      if (str.includes('second') || str.includes('two') || str === 'ii' || str === '2nd') return 2;
-      if (str.includes('third') || str.includes('three') || str === 'iii' || str === '3rd') return 3;
-      if (str.includes('fourth') || str.includes('four') || str === 'iv' || str === '4th') return 4;
-      return undefined;
+      return '';
     };
 
-    // Check existing in DB
-    const existingStudent = await Student.findOne({ registerNumber: regNo });
-    if (existingStudent) {
-      existingStudent.name = name;
-      if (row.email) existingStudent.email = String(row.email).trim();
-      existingStudent.department = deptId;
-      existingStudent.year = parseYear(row.year);
-      if (row.batch) existingStudent.batch = String(row.batch).trim();
-      if (row.phone) existingStudent.phone = String(row.phone).trim();
+    const email = getRowVal([
+      'Official Gmail ID', 'Official Gmail Id', 'Official Gmail', 'Official Email ID',
+      'Official Email', 'Official Mail', 'OfficialGmail', 'OfficialEmail',
+      'Gmail ID', 'Gmail Id', 'Gmail', 'Email ID', 'Email Id', 'Email', 'email', 'Official ID', 'OfficialId'
+    ]);
 
-      // If student hasn't changed their password yet, reset it to Department Code + Register Number
-      if (existingStudent.mustChangePassword) {
-        const regNoUpper = regNo.toUpperCase();
-        const match = regNoUpper.match(/\d+([A-Z]+)\d+/);
-        const deptCode = match ? match[1] : (deptCodeMap[deptId.toString()] || 'CSE');
-        existingStudent.password = deptCode.toUpperCase() + regNoUpper; // Handled by pre-save hook
+    const rawRegNo = getRowVal([
+      'Register No', 'Register Number', 'Reg No', 'regNo', 'RegisterNo', 'Roll No', 'RollNo'
+    ]);
+
+    const regNo = (rawRegNo || email).toUpperCase();
+
+    const username = getRowVal([
+      'Username', 'username', 'User Name', 'user_name'
+    ]) || email || regNo;
+
+    const name = getRowVal([
+      'Name', 'Student Name', 'Full Name', 'student_name'
+    ]);
+
+    const deptCode = getRowVal([
+      'Department', 'Dept', 'department', 'Branch'
+    ]).toUpperCase() || 'CSE';
+
+    const rawPassword = getRowVal([
+      'Official Password', 'Password', 'password', 'Pass', 'pwd', 'Passcode'
+    ]);
+
+    const year = Number(getRowVal(['Year', 'year', 'Year of Study']) || 1);
+    const batch = getRowVal(['Batch', 'batch']);
+    const phone = getRowVal(['Phone', 'phone', 'Mobile']);
+
+    if (!regNo || !name) {
+      results.failed++;
+      results.errors.push({ row: rowNum, reason: 'Name and Register No / Official Gmail are required.' });
+      continue;
+    }
+
+    let departmentId = deptMap[deptCode];
+    if (!departmentId) {
+      const newDept = await firebaseDb.create('departments', {
+        name: deptCode,
+        code: deptCode,
+        description: 'Automatically created during student excel import',
+        status: STATUS.ACTIVE,
+      });
+      departmentId = newDept._id;
+      deptMap[deptCode] = departmentId;
+    }
+
+    const existingStudent = await firebaseDb.findOne('students', s => s.registerNumber?.toUpperCase() === regNo);
+    if (existingStudent) {
+      const updates = {};
+      if (email) {
+        updates.email = email;
+        updates.officialGmail = email;
+      }
+      if (username && username !== regNo) {
+        updates.username = username;
+      }
+      if (name) updates.name = name;
+      if (departmentId) updates.departmentId = departmentId;
+
+      if (rawPassword) {
+        updates.password = await bcrypt.hash(rawPassword, BCRYPT_ROUNDS);
+        updates.mustChangePassword = false;
       }
 
-      await existingStudent.save();
-
+      await firebaseDb.update('students', existingStudent._id, updates);
+      importedStudentIds.push(existingStudent._id);
       results.success++;
       continue;
     }
 
-    const regNoUpper = regNo.toUpperCase();
-    const match = regNoUpper.match(/\d+([A-Z]+)\d+/);
-    const deptCode = match ? match[1] : (deptCodeMap[deptId.toString()] || 'CSE');
-    const defaultPassword = deptCode.toUpperCase() + regNoUpper;
-    const hashedPassword = await bcrypt.hash(defaultPassword, 12);
-    studentsToInsert.push({
+    const finalPassword = rawPassword || `${deptCode}${regNo}`;
+    const hashedPassword = await bcrypt.hash(finalPassword, BCRYPT_ROUNDS);
+
+    const student = await firebaseDb.create('students', {
       registerNumber: regNo,
-      name,
-      email: String(row.email || '').trim() || undefined,
+      username: username || email || regNo,
       password: hashedPassword,
-      mustChangePassword: true,
-      department: deptId,
-      year: parseYear(row.year),
-      batch: String(row.batch || '').trim() || undefined,
-      phone: String(row.phone || '').trim() || undefined,
+      name,
+      email,
+      officialGmail: email,
+      departmentId,
+      year,
+      batch,
+      phone,
+      status: STATUS.ACTIVE,
+      mustChangePassword: !rawPassword,
     });
+
+    importedStudentIds.push(student._id);
+    results.success++;
   }
 
-  // Bulk insert valid students
-  let bulkSuccessCount = 0;
-  if (studentsToInsert.length > 0) {
-    try {
-      await Student.insertMany(studentsToInsert, { ordered: false });
-      bulkSuccessCount = studentsToInsert.length;
-      results.success += bulkSuccessCount;
-    } catch (err) {
-      // With ordered: false, some might succeed and some fail.
-      results.failed += studentsToInsert.length;
-      results.errors.push({ row: 'bulk', reason: `Bulk insert error: ${err.message}` });
-    }
-  }
-
-  results.failed = normalizedRows.length - results.success - results.skipped;
-
-  // Retrieve IDs of all imported / updated students for this file
-  const allRegNos = normalizedRows.map(r => r.registerNumber).filter(Boolean);
-  const dbStudents = await Student.find({ registerNumber: { $in: allRegNos } }, '_id');
-  const importedStudentIds = dbStudents.map(s => s._id);
-
-  // Save the uploaded file metadata and buffer to the database
-  const uploadedFile = await UploadedFile.create({
-    fileName: `student_import_${Date.now()}_${req.file.originalname}`,
-    originalName: req.file.originalname || 'import.xlsx',
-    fileData: req.file.buffer,
-    mimeType: req.file.mimetype,
-    size: req.file.size,
-    studentIds: importedStudentIds,
+  await firebaseDb.create('excel_uploads', {
+    filename: req.file.originalname,
+    totalRecords: results.total,
+    successCount: results.success,
+    failedCount: results.failed,
+    importedStudentIds,
     uploadedBy: req.user.id,
   });
 
   await createAuditLog({
-    action: AUDIT_ACTIONS.UPLOAD,
+    action: AUDIT_ACTIONS.IMPORT,
     entity: AUDIT_ENTITIES.STUDENT,
-    entityId: uploadedFile._id,
+    entityId: null,
     performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
     ipAddress: req.ip,
-    description: `Excel upload: '${uploadedFile.originalName}' (${results.success} created/updated, ${results.skipped} skipped, ${results.failed} failed)`,
+    description: `Imported students Excel '${req.file.originalname}': success=${results.success}, failed=${results.failed}`,
   });
 
-  return sendSuccess(res, 200, 'Excel upload completed', results);
-});
-
-// GET all uploaded student Excel files
-exports.getUploadedFiles = catchAsync(async (req, res) => {
-  const { page: p, limit: l, skip } = getPagination(req.query);
-  const [files, total] = await Promise.all([
-    UploadedFile.find()
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(l)
-      .populate('uploadedBy', 'name')
-      .select('-fileData'), // Don't return the file buffer to save bandwidth
-    UploadedFile.countDocuments(),
-  ]);
-
-  return sendPaginated(res, 'Uploaded files fetched', files, p, l, total);
-});
-
-// DELETE an uploaded student Excel file record (and optionally its imported students)
-exports.deleteUploadedFile = catchAsync(async (req, res) => {
-  const { deleteStudents } = req.query; // 'true' or 'false'
-  const file = await UploadedFile.findById(req.params.id);
-  if (!file) return sendError(res, 404, 'Uploaded file record not found.');
-
-  if (deleteStudents === 'true' && file.studentIds && file.studentIds.length > 0) {
-    // Hard delete all students imported by this file
-    await Student.deleteMany({ _id: { $in: file.studentIds } });
-
-    // Cascading delete student associated records
-    await Attendance.deleteMany({ student: { $in: file.studentIds } });
-    await Marks.deleteMany({ student: { $in: file.studentIds } });
-    await StudentFeedback.deleteMany({ student: { $in: file.studentIds } });
-
-    await createAuditLog({
-      action: AUDIT_ACTIONS.DELETE,
-      entity: AUDIT_ENTITIES.STUDENT,
-      entityId: null,
-      performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
-      ipAddress: req.ip,
-      description: `Deleted ${file.studentIds.length} students imported from file '${file.originalName}'`,
-    });
-  }
-
-  await file.deleteOne();
-
-  await createAuditLog({
-    action: 'DELETE',
-    entity: 'UploadedFile',
-    entityId: file._id,
-    performedBy: { _id: req.user.id, name: req.user.name, role: req.user.role },
-    ipAddress: req.ip,
-    description: `Deleted uploaded file record: '${file.originalName}' (imported students deleted: ${deleteStudents})`,
-  });
-
-  return sendSuccess(res, 200, 'Uploaded file record deleted successfully.');
+  return sendSuccess(res, 200, 'Excel import processed', results);
 });

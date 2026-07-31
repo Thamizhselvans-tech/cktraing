@@ -83,7 +83,7 @@ export default function StudentLogin() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="input-group">
-              <label className="input-label">Register Number</label>
+              <label className="input-label">Official Gmail ID</label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-500 pointer-events-none">
                   <IdCard size={16} />
@@ -92,7 +92,7 @@ export default function StudentLogin() {
                   type="text"
                   value={registerNumber}
                   onChange={(e) => setRegisterNumber(e.target.value)}
-                  placeholder="Enter your Register Number"
+                  placeholder="Enter your Official Gmail ID"
                   className="input-field pl-10"
                   required
                 />
@@ -109,7 +109,7 @@ export default function StudentLogin() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password"
+                  placeholder="Enter assigned password"
                   className="input-field pl-10"
                   required
                 />

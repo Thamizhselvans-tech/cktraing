@@ -65,7 +65,6 @@ const studentSchema = new mongoose.Schema(
 
 // Compound index for filtering
 studentSchema.index({ department: 1, status: 1 });
-studentSchema.index({ registerNumber: 1 });
 
 // Hash password before save
 studentSchema.pre('save', async function (next) {
