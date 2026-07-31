@@ -18,27 +18,37 @@ function withTimeout(promise, ms = FETCH_TIMEOUT_MS) {
 const firebaseDb = {
   // Get all items in a node as an array of objects
   async getAll(node) {
-    const snapshot = await withTimeout(db.ref(node).once('value'));
-    const val = snapshot ? snapshot.val() : null;
-    if (!val) return [];
-    return Object.keys(val).map(key => ({
-      _id: key,
-      id: key,
-      ...val[key]
-    }));
+    try {
+      const snapshot = await withTimeout(db.ref(node).once('value'));
+      const val = snapshot ? snapshot.val() : null;
+      if (!val) return [];
+      return Object.keys(val).map(key => ({
+        _id: key,
+        id: key,
+        ...val[key]
+      }));
+    } catch (err) {
+      console.error(`⚠️ [Firebase] Timeout/Error fetching node '${node}':`, err.message);
+      return [];
+    }
   },
 
   // Get item by ID
   async getById(node, id) {
     if (!id) return null;
-    const snapshot = await withTimeout(db.ref(`${node}/${id}`).once('value'));
-    const val = snapshot ? snapshot.val() : null;
-    if (!val) return null;
-    return {
-      _id: id,
-      id: id,
-      ...val
-    };
+    try {
+      const snapshot = await withTimeout(db.ref(`${node}/${id}`).once('value'));
+      const val = snapshot ? snapshot.val() : null;
+      if (!val) return null;
+      return {
+        _id: id,
+        id: id,
+        ...val
+      };
+    } catch (err) {
+      console.error(`⚠️ [Firebase] Timeout/Error fetching '${node}/${id}':`, err.message);
+      return null;
+    }
   },
 
   // Find items by filter predicate or query object

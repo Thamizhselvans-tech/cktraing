@@ -283,7 +283,17 @@ exports.getMe = catchAsync(async (req, res) => {
   let user;
 
   if (role === ROLES.ADMIN) {
-    user = await firebaseDb.getById('admins', id);
+    if (id === 'admin_root') {
+      user = {
+        _id: 'admin_root',
+        id: 'admin_root',
+        name: process.env.ADMIN_NAME || 'System Administrator',
+        username: process.env.ADMIN_USERNAME || 'Admin911@ck',
+        email: process.env.ADMIN_EMAIL || 'admin@tms.college.edu',
+      };
+    } else {
+      user = await firebaseDb.getById('admins', id);
+    }
   } else if (role === ROLES.COORDINATOR) {
     const raw = await firebaseDb.getById('coordinators', id);
     user = await firebaseDb.populateDepartment(raw);
