@@ -84,34 +84,40 @@ export default function AdminLogin() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="input-group">
-              <label className="input-label">Username</label>
+              <label htmlFor="admin-username" className="input-label">Username</label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-500 pointer-events-none">
                   <User size={16} />
                 </span>
                 <input
+                  id="admin-username"
+                  name="username"
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Enter admin username"
                   className="input-field pl-10"
+                  autoComplete="username"
                   required
                 />
               </div>
             </div>
 
             <div className="input-group">
-              <label className="input-label">Password</label>
+              <label htmlFor="admin-password" className="input-label">Password</label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-500 pointer-events-none">
                   <KeyRound size={16} />
                 </span>
                 <input
+                  id="admin-password"
+                  name="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter admin password"
                   className="input-field pl-10"
+                  autoComplete="current-password"
                   required
                 />
               </div>

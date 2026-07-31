@@ -179,8 +179,10 @@ export default function DepartmentManagement() {
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editId ? 'Edit Department' : 'Add Department'}>
         <form onSubmit={handleSave} className="space-y-4">
           <div className="input-group">
-            <label className="input-label">Department Code (e.g. CSE)</label>
+            <label htmlFor="dept-code" className="input-label">Department Code (e.g. CSE)</label>
             <input
+              id="dept-code"
+              name="code"
               type="text"
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
@@ -190,8 +192,10 @@ export default function DepartmentManagement() {
             />
           </div>
           <div className="input-group">
-            <label className="input-label">Department Name</label>
+            <label htmlFor="dept-name" className="input-label">Department Name</label>
             <input
+              id="dept-name"
+              name="name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -201,8 +205,10 @@ export default function DepartmentManagement() {
             />
           </div>
           <div className="input-group">
-            <label className="input-label">Description</label>
+            <label htmlFor="dept-description" className="input-label">Description</label>
             <textarea
+              id="dept-description"
+              name="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Enter description..."
@@ -211,8 +217,10 @@ export default function DepartmentManagement() {
           </div>
           {editId && (
             <div className="input-group">
-              <label className="input-label">Status</label>
+              <label htmlFor="dept-status" className="input-label">Status</label>
               <select
+                id="dept-status"
+                name="status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
                 className="select-field"

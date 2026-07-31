@@ -88,34 +88,40 @@ export default function StudentLogin() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="input-group">
-              <label className="input-label">Official Gmail ID</label>
+              <label htmlFor="student-register-number" className="input-label">Official Gmail ID</label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-500 pointer-events-none">
                   <IdCard size={16} />
                 </span>
                 <input
+                  id="student-register-number"
+                  name="registerNumber"
                   type="text"
                   value={registerNumber}
                   onChange={(e) => setRegisterNumber(e.target.value)}
                   placeholder="Enter your Official Gmail ID"
                   className="input-field pl-10"
+                  autoComplete="username"
                   required
                 />
               </div>
             </div>
 
             <div className="input-group">
-              <label className="input-label">Password</label>
+              <label htmlFor="student-password" className="input-label">Password</label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-500 pointer-events-none">
                   <KeyRound size={16} />
                 </span>
                 <input
+                  id="student-password"
+                  name="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter assigned password"
                   className="input-field pl-10"
+                  autoComplete="current-password"
                   required
                 />
               </div>
