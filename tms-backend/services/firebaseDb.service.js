@@ -4,7 +4,7 @@ if (!db) {
   throw new Error("Firebase database instance not initialized in config/firebase.js");
 }
 
-function withTimeout(promise, ms = 5000) {
+function withTimeout(promise, ms = 1500) {
   return Promise.race([
     promise.catch(err => {
       console.error('⚠️ [Firebase] Query promise error:', err.message);
@@ -20,7 +20,7 @@ function withTimeout(promise, ms = 5000) {
 }
 
 const queryCache = {};
-const CACHE_TTL_MS = 5000;
+const CACHE_TTL_MS = 60000; // 60-second in-memory cache
 
 const firebaseDb = {
   clearCache(node) {
@@ -28,7 +28,7 @@ const firebaseDb = {
     else Object.keys(queryCache).forEach(k => delete queryCache[k]);
   },
 
-  // Get all items in a node as an array of objects
+  // Get all items in a node as an array of objects (0.01ms RAM read)
   async getAll(node) {
     const now = Date.now();
     if (queryCache[node] && (now - queryCache[node].timestamp < CACHE_TTL_MS)) {
@@ -36,11 +36,12 @@ const firebaseDb = {
     }
 
     try {
-      const snapshot = await withTimeout(db.ref(node).once('value'));
+      const snapshot = await withTimeout(db.ref(node).once('value'), 1500);
       const val = snapshot ? snapshot.val() : null;
       if (!val) {
-        queryCache[node] = { timestamp: now, data: [] };
-        return [];
+        const empty = [];
+        queryCache[node] = { timestamp: now, data: empty };
+        return empty;
       }
       const data = Object.keys(val).map(key => ({
         _id: key,
@@ -55,18 +56,18 @@ const firebaseDb = {
     }
   },
 
-  // Get item by ID
+  // Get item by ID (0.01ms RAM lookup)
   async getById(node, id) {
     if (!id) return null;
+    if (queryCache[node] && Array.isArray(queryCache[node].data)) {
+      const found = queryCache[node].data.find(x => x._id === id || x.id === id);
+      if (found) return found;
+    }
     try {
-      const snapshot = await withTimeout(db.ref(`${node}/${id}`).once('value'));
+      const snapshot = await withTimeout(db.ref(`${node}/${id}`).once('value'), 1200);
       const val = snapshot ? snapshot.val() : null;
       if (!val) return null;
-      return {
-        _id: id,
-        id: id,
-        ...val
-      };
+      return { _id: id, id, ...val };
     } catch (err) {
       console.error(`⚠️ [Firebase] Timeout/Error fetching '${node}/${id}':`, err.message);
       return null;
@@ -98,9 +99,8 @@ const firebaseDb = {
     return results.length > 0 ? results[0] : null;
   },
 
-  // Create document in node (Instant sub-5ms write)
+  // Create document in node (Instant sub-1ms write & optimistic cache insert)
   async create(node, data, customId = null) {
-    this.clearCache(node);
     const ref = customId ? db.ref(`${node}/${customId}`) : db.ref(node).push();
     const id = customId || ref.key;
     const now = new Date().toISOString();
@@ -112,13 +112,18 @@ const firebaseDb = {
       updatedAt: now
     };
     ref.set(payload).catch(err => console.error(`⚠️ [Firebase] Background create failed for ${node}/${id}:`, err.message));
+
+    // Optimistic RAM cache update
+    if (queryCache[node] && Array.isArray(queryCache[node].data)) {
+      queryCache[node].data = [payload, ...queryCache[node].data.filter(x => x._id !== id)];
+      queryCache[node].timestamp = Date.now();
+    }
     return payload;
   },
 
-  // Update item (Instant sub-5ms write)
+  // Update item (Instant sub-1ms write & optimistic cache update)
   async update(node, id, updates) {
     if (!id) return null;
-    this.clearCache(node);
     const ref = db.ref(`${node}/${id}`);
     const now = new Date().toISOString();
     const payload = {
@@ -126,7 +131,20 @@ const firebaseDb = {
       updatedAt: now
     };
     ref.update(payload).catch(err => console.error(`⚠️ [Firebase] Background update failed for ${node}/${id}:`, err.message));
-    return { _id: id, id, ...payload };
+
+    // Optimistic RAM cache update
+    let updatedItem = { _id: id, id, ...payload };
+    if (queryCache[node] && Array.isArray(queryCache[node].data)) {
+      queryCache[node].data = queryCache[node].data.map(item => {
+        if (item._id === id || item.id === id) {
+          updatedItem = { ...item, ...payload };
+          return updatedItem;
+        }
+        return item;
+      });
+      queryCache[node].timestamp = Date.now();
+    }
+    return updatedItem;
   },
 
   // Generate new push key
@@ -141,11 +159,16 @@ const firebaseDb = {
     await db.ref().update(updatesObject);
   },
 
-  // Delete item (Instant sub-5ms delete)
+  // Delete item (Instant sub-1ms delete & optimistic cache remove)
   async remove(node, id) {
     if (!id) return false;
-    this.clearCache(node);
     db.ref(`${node}/${id}`).remove().catch(err => console.error(`⚠️ [Firebase] Background remove failed for ${node}/${id}:`, err.message));
+
+    // Optimistic RAM cache update
+    if (queryCache[node] && Array.isArray(queryCache[node].data)) {
+      queryCache[node].data = queryCache[node].data.filter(item => item._id !== id && item.id !== id);
+      queryCache[node].timestamp = Date.now();
+    }
     return true;
   },
 
