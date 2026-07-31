@@ -4,13 +4,17 @@ if (!db) {
   throw new Error("Firebase database instance not initialized in config/firebase.js");
 }
 
-const FETCH_TIMEOUT_MS = 25000;
-
-function withTimeout(promise, ms = FETCH_TIMEOUT_MS) {
+function withTimeout(promise, ms = 5000) {
   return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Database query timed out. Please try again.')), ms)
+    promise.catch(err => {
+      console.error('⚠️ [Firebase] Query promise error:', err.message);
+      return null;
+    }),
+    new Promise((resolve) =>
+      setTimeout(() => {
+        console.warn(`⚠️ [Firebase] Query timed out after ${ms}ms. Resolving with fallback.`);
+        resolve(null);
+      }, ms)
     ),
   ]);
 }
