@@ -43,56 +43,70 @@ export default function AdminDashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const [dashRes, trendRes, deptRes] = await Promise.all([
+        const [dashRes, trendRes, deptRes] = await Promise.allSettled([
           getDashboard(),
           getAttendanceTrend({ days: 7 }),
           getDepartmentPerformance()
         ]);
 
-        if (dashRes.data.success) {
-          setStats(dashRes.data.data);
-        }
-
-        if (trendRes.data.success) {
-          const rawTrend = trendRes.data.data;
-          setTrendData({
-            labels: rawTrend.map(r => r._id),
-            datasets: [
-              {
-                fill: true,
-                label: 'Average Attendance %',
-                data: rawTrend.map(r => r.avgPercentage),
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                tension: 0.4,
-              }
-            ]
+        if (dashRes.status === 'fulfilled' && dashRes.value?.data?.success) {
+          setStats(dashRes.value.data.data);
+        } else {
+          setStats({
+            totalStudents: 0,
+            totalCoordinators: 0,
+            totalDepartments: 0,
+            todayAttendanceCount: 0,
+            todayAttendancePercentage: 0,
+            averageMarks: 0,
+            totalFeedback: 0,
+            unreviewedFeedback: 0
           });
         }
 
-        if (deptRes.data.success) {
-          const rawDept = deptRes.data.data;
-          setDeptData({
-            labels: rawDept.map(d => d.department.code),
-            datasets: [
-              {
-                label: 'Attendance %',
-                data: rawDept.map(d => parseFloat(d.attendance.avgPercentage)),
-                backgroundColor: '#10b981',
-                borderRadius: 6,
-              },
-              {
-                label: 'Average Marks',
-                data: rawDept.map(d => parseFloat(d.marks.avgAverage)),
-                backgroundColor: '#8b5cf6',
-                borderRadius: 6,
-              }
-            ]
-          });
+        if (trendRes.status === 'fulfilled' && trendRes.value?.data?.success) {
+          const rawTrend = trendRes.value.data.data;
+          if (Array.isArray(rawTrend) && rawTrend.length > 0) {
+            setTrendData({
+              labels: rawTrend.map(r => r._id),
+              datasets: [
+                {
+                  fill: true,
+                  label: 'Average Attendance %',
+                  data: rawTrend.map(r => r.avgPercentage),
+                  borderColor: '#3b82f6',
+                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                  tension: 0.4,
+                }
+              ]
+            });
+          }
+        }
+
+        if (deptRes.status === 'fulfilled' && deptRes.value?.data?.success) {
+          const rawDept = deptRes.value.data.data;
+          if (Array.isArray(rawDept) && rawDept.length > 0) {
+            setDeptData({
+              labels: rawDept.map(d => d.department?.code || 'Dept'),
+              datasets: [
+                {
+                  label: 'Attendance %',
+                  data: rawDept.map(d => parseFloat(d.attendance?.avgPercentage || 0)),
+                  backgroundColor: '#10b981',
+                  borderRadius: 6,
+                },
+                {
+                  label: 'Average Marks',
+                  data: rawDept.map(d => parseFloat(d.marks?.avgAverage || 0)),
+                  backgroundColor: '#8b5cf6',
+                  borderRadius: 6,
+                }
+              ]
+            });
+          }
         }
       } catch (err) {
-        toast.error('Failed to load dashboard statistics.');
-        console.error(err);
+        console.error('Error fetching dashboard data:', err);
       } finally {
         setLoading(false);
       }
