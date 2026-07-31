@@ -28,34 +28,36 @@ const parseSafeDate = (dateVal) => {
 };
 
 /**
- * Creates an audit log entry.
+ * Creates an audit log entry (Non-blocking background execution for maximum API speed).
  */
-const createAuditLog = async ({
+const createAuditLog = ({
   action,
   entity,
   entityId,
-  performedBy,
+  performedBy = {},
   ipAddress,
   previousData = null,
   newData = null,
   description = '',
 }) => {
-  try {
-    await firebaseDb.create('audit_logs', {
-      action,
-      entity,
-      entityId: entityId ? entityId.toString() : null,
-      performedBy: performedBy._id ? performedBy._id.toString() : null,
-      performedByRole: performedBy.role,
-      performedByName: performedBy.name || performedBy.username || 'Unknown',
-      ipAddress: ipAddress || '',
-      previousData,
-      newData,
-      description,
-    });
-  } catch (err) {
-    console.error('⚠️  Audit log failed:', err.message);
-  }
+  setImmediate(async () => {
+    try {
+      await firebaseDb.create('audit_logs', {
+        action,
+        entity,
+        entityId: entityId ? entityId.toString() : null,
+        performedBy: performedBy._id ? performedBy._id.toString() : null,
+        performedByRole: performedBy.role,
+        performedByName: performedBy.name || performedBy.username || 'Unknown',
+        ipAddress: ipAddress || '',
+        previousData,
+        newData,
+        description,
+      });
+    } catch (err) {
+      console.error('⚠️  Audit log background write failed:', err.message);
+    }
+  });
 };
 
 /**
