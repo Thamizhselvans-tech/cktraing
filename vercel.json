@@ -1,5 +1,5 @@
 {
-  "buildCommand": "cd tms-frontend && npm install && npm run build",
+  "buildCommand": "cd tms-frontend 2>/dev/null && npm run build || npm run build",
   "outputDirectory": "tms-frontend/dist",
   "framework": "vite",
   "rewrites": [

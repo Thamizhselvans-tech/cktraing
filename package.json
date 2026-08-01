@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "cd tms-backend && npm install && node server.js",
-    "build": "cd tms-frontend && npm install && npm run build",
+    "start": "cd tms-backend && node server.js",
+    "build": "cd tms-frontend 2>/dev/null && npm run build || npm run build",
     "dev": "npm --prefix tms-backend run dev"
   },
   "engines": {
