@@ -4,25 +4,69 @@ if (!db) {
   throw new Error("Firebase database instance not initialized in config/firebase.js");
 }
 
-function withTimeout(promise, ms = 1500) {
+function withTimeout(promise, ms = 15000) {
   return Promise.race([
     promise.catch(err => {
       console.error('⚠️ [Firebase] Query promise error:', err.message);
-      return null;
+      return undefined;
     }),
     new Promise((resolve) =>
       setTimeout(() => {
         console.warn(`⚠️ [Firebase] Query timed out after ${ms}ms. Resolving with fallback.`);
-        resolve(null);
+        resolve(undefined);
       }, ms)
     ),
   ]);
 }
 
 const queryCache = {};
-const CACHE_TTL_MS = 60000; // 60-second in-memory cache
+const CACHE_TTL_MS = 300000; // 5-minute fallback TTL
 
 const firebaseDb = {
+  sanitizePayload(data) {
+    if (!data || typeof data !== 'object') return data;
+    const clean = Array.isArray(data) ? [] : {};
+    Object.keys(data).forEach(k => {
+      if (data[k] !== undefined) {
+        clean[k] = (typeof data[k] === 'object' && data[k] !== null) ? this.sanitizePayload(data[k]) : data[k];
+      }
+    });
+    return clean;
+  },
+
+  // Initialize real-time listeners for instant 0.1ms RAM lookups
+  initRealtimeSync() {
+    const nodes = ['departments', 'students', 'coordinators', 'admins', 'schedules', 'timetables', 'attendance', 'marks'];
+    console.log('⚡ Initializing real-time database RAM sync for zero-latency API responses...');
+    nodes.forEach(node => {
+      try {
+        db.ref(node).on('value', (snapshot) => {
+          const val = snapshot.val();
+          let data = [];
+          if (val) {
+            data = Object.keys(val).map(key => ({
+              _id: key,
+              id: key,
+              ...val[key]
+            }));
+          }
+          queryCache[node] = { timestamp: Date.now(), data, isSynced: true };
+        }, (err) => {
+          console.warn(`⚠️ [Firebase Sync Warning] Listener error on node '${node}':`, err.message);
+        });
+      } catch (e) {
+        console.error(`❌ Error setting up listener for '${node}':`, e.message);
+      }
+    });
+  },
+
+  async preloadCache() {
+    const nodes = ['departments', 'students', 'coordinators', 'admins', 'schedules', 'timetables', 'attendance', 'marks'];
+    console.log('⚡ Pre-warming database RAM cache...');
+    await Promise.all(nodes.map(node => this.getAll(node).catch(() => [])));
+    console.log('🚀 Database RAM cache ready for ultra-fast response speed!');
+  },
+
   clearCache(node) {
     if (node) delete queryCache[node];
     else Object.keys(queryCache).forEach(k => delete queryCache[k]);
@@ -30,30 +74,42 @@ const firebaseDb = {
 
   // Get all items in a node as an array of objects (0.01ms RAM read)
   async getAll(node) {
-    const now = Date.now();
-    if (queryCache[node] && (now - queryCache[node].timestamp < CACHE_TTL_MS)) {
+    if (queryCache[node] && queryCache[node].isSynced) {
+      return queryCache[node].data;
+    }
+
+    // Fast check: wait up to 4000ms for real-time listener to populate RAM cache on cold start
+    for (let i = 0; i < 40; i++) {
+      if (queryCache[node] && queryCache[node].isSynced) {
+        return queryCache[node].data;
+      }
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    if (queryCache[node] && Array.isArray(queryCache[node].data)) {
       return queryCache[node].data;
     }
 
     try {
-      const snapshot = await withTimeout(db.ref(node).once('value'), 1500);
-      const val = snapshot ? snapshot.val() : null;
-      if (!val) {
-        const empty = [];
-        queryCache[node] = { timestamp: now, data: empty };
-        return empty;
+      const snapshot = await withTimeout(db.ref(node).once('value'), 10000);
+      if (snapshot && typeof snapshot.val === 'function') {
+        const val = snapshot.val();
+        let data = [];
+        if (val) {
+          data = Object.keys(val).map(key => ({
+            _id: key,
+            id: key,
+            ...val[key]
+          }));
+        }
+        queryCache[node] = { timestamp: Date.now(), data, isSynced: true };
+        return data;
       }
-      const data = Object.keys(val).map(key => ({
-        _id: key,
-        id: key,
-        ...val[key]
-      }));
-      queryCache[node] = { timestamp: now, data };
-      return data;
     } catch (err) {
-      console.error(`⚠️ [Firebase] Timeout/Error fetching node '${node}':`, err.message);
-      return queryCache[node] ? queryCache[node].data : [];
+      console.error(`⚠️ [Firebase] Error fetching node '${node}':`, err.message);
     }
+
+    return queryCache[node] ? queryCache[node].data : [];
   },
 
   // Get item by ID (0.01ms RAM lookup)
@@ -64,12 +120,13 @@ const firebaseDb = {
       if (found) return found;
     }
     try {
-      const snapshot = await withTimeout(db.ref(`${node}/${id}`).once('value'), 1200);
+      const snapshot = await withTimeout(db.ref(`${node}/${id}`).once('value'), 5000);
+      if (snapshot === undefined) return queryCache[node]?.data?.find(x => x._id === id || x.id === id) || null;
       const val = snapshot ? snapshot.val() : null;
       if (!val) return null;
       return { _id: id, id, ...val };
     } catch (err) {
-      console.error(`⚠️ [Firebase] Timeout/Error fetching '${node}/${id}':`, err.message);
+      console.error(`⚠️ [Firebase] Error fetching '${node}/${id}':`, err.message);
       return null;
     }
   },
@@ -104,13 +161,13 @@ const firebaseDb = {
     const ref = customId ? db.ref(`${node}/${customId}`) : db.ref(node).push();
     const id = customId || ref.key;
     const now = new Date().toISOString();
-    const payload = {
+    const payload = this.sanitizePayload({
       ...data,
       id: id,
       _id: id,
       createdAt: data.createdAt || now,
       updatedAt: now
-    };
+    });
     ref.set(payload).catch(err => console.error(`⚠️ [Firebase] Background create failed for ${node}/${id}:`, err.message));
 
     // Optimistic RAM cache update
@@ -126,10 +183,10 @@ const firebaseDb = {
     if (!id) return null;
     const ref = db.ref(`${node}/${id}`);
     const now = new Date().toISOString();
-    const payload = {
+    const payload = this.sanitizePayload({
       ...updates,
       updatedAt: now
-    };
+    });
     ref.update(payload).catch(err => console.error(`⚠️ [Firebase] Background update failed for ${node}/${id}:`, err.message));
 
     // Optimistic RAM cache update
@@ -155,8 +212,9 @@ const firebaseDb = {
   // Perform atomic multi-path update in 1 network call
   async multiUpdate(updatesObject) {
     if (!updatesObject || Object.keys(updatesObject).length === 0) return;
-    this.clearCache();
-    await db.ref().update(updatesObject);
+    const cleanUpdates = this.sanitizePayload(updatesObject);
+    await db.ref().update(cleanUpdates);
+    this.preloadCache().catch(() => {});
   },
 
   // Delete item (Instant sub-1ms delete & optimistic cache remove)
@@ -206,5 +264,8 @@ const firebaseDb = {
     }));
   }
 };
+
+// Auto-start real-time sync when loaded
+firebaseDb.initRealtimeSync();
 
 module.exports = firebaseDb;

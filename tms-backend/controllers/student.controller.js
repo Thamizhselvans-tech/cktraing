@@ -273,16 +273,46 @@ exports.deleteUploadedFile = catchAsync(async (req, res) => {
 });
 
 // POST upload students Excel (Ultra-fast Batch Optimized)
+// POST upload students Excel (Ultra-fast Batch Optimized & Flexible Column Matching)
 exports.uploadStudentsExcel = catchAsync(async (req, res) => {
   if (!req.file) return sendError(res, 400, 'Please upload an Excel file.');
 
   const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(sheet);
+
+  // 1. Read sheet as 2D array to automatically detect header row index
+  const raw2D = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  if (!raw2D || raw2D.length === 0) {
+    return sendError(res, 400, 'Excel file is empty.');
+  }
+
+  let headerRowIdx = 0;
+  for (let i = 0; i < Math.min(raw2D.length, 15); i++) {
+    const rowStr = raw2D[i].map(c => String(c || '').toLowerCase()).join(' ');
+    if (
+      (rowStr.includes('name') || rowStr.includes('student')) &&
+      (rowStr.includes('reg') || rowStr.includes('roll') || rowStr.includes('mail') || rowStr.includes('email') || rowStr.includes('gmail') || rowStr.includes('s.no') || rowStr.includes('s. no'))
+    ) {
+      headerRowIdx = i;
+      break;
+    }
+  }
+
+  const headers = raw2D[headerRowIdx].map(h => String(h || '').trim());
+  const rows = [];
+  for (let r = headerRowIdx + 1; r < raw2D.length; r++) {
+    const rowData = raw2D[r];
+    if (!rowData || rowData.length === 0 || rowData.every(cell => String(cell || '').trim() === '')) continue;
+    const rowObj = {};
+    headers.forEach((h, colIdx) => {
+      if (h) rowObj[h] = rowData[colIdx] !== undefined ? rowData[colIdx] : '';
+    });
+    rows.push(rowObj);
+  }
 
   if (rows.length === 0) {
-    return sendError(res, 400, 'Excel file is empty.');
+    return sendError(res, 400, 'No student records found in Excel file.');
   }
 
   const results = { total: rows.length, success: 0, failed: 0, errors: [] };
@@ -290,7 +320,7 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
   const atomicUpdates = {};
   const now = new Date().toISOString();
 
-  // 1. Single-query prefetch for existing departments & students
+  // Single-query prefetch for existing departments & students
   const [existingDepts, existingStudents] = await Promise.all([
     firebaseDb.getAll('departments'),
     firebaseDb.getAll('students')
@@ -305,16 +335,24 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
   const studentMap = {};
   existingStudents.forEach(s => {
     if (s.registerNumber) studentMap[s.registerNumber.toUpperCase()] = s;
+    if (s.officialGmail) studentMap[s.officialGmail.toLowerCase()] = s;
+    if (s.email) studentMap[s.email.toLowerCase()] = s;
   });
 
   // Flexible Excel column extraction helper
-  const getRowVal = (row, keys) => {
-    for (const k of Object.keys(row)) {
-      const cleanK = k.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-      for (const target of keys) {
-        const cleanTarget = target.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (cleanK === cleanTarget) {
-          return String(row[k] || '').trim();
+  const getRowVal = (row, targetKeys) => {
+    const cleanTargets = targetKeys.map(t => String(t).trim().toLowerCase().replace(/[^a-z0-9]/g, ''));
+    for (const [k, v] of Object.entries(row)) {
+      const cleanK = String(k).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanTargets.includes(cleanK)) {
+        return String(v !== undefined && v !== null ? v : '').trim();
+      }
+    }
+    for (const [k, v] of Object.entries(row)) {
+      const cleanK = String(k).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (const target of cleanTargets) {
+        if (cleanK.length > 2 && (cleanK.includes(target) || target.includes(cleanK))) {
+          return String(v !== undefined && v !== null ? v : '').trim();
         }
       }
     }
@@ -325,16 +363,17 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
   const preparedRows = [];
   for (let idx = 0; idx < rows.length; idx++) {
     const row = rows[idx];
-    const rowNum = idx + 2;
+    const rowNum = idx + headerRowIdx + 2;
 
     const email = getRowVal(row, [
-      'Official Gmail ID', 'Official Gmail Id', 'Official Gmail', 'Official Email ID',
-      'Official Email', 'Official Mail', 'OfficialGmail', 'OfficialEmail',
-      'Gmail ID', 'Gmail Id', 'Gmail', 'Email ID', 'Email Id', 'Email', 'email', 'Official ID', 'OfficialId'
+      'Official Email', 'Official Gmail', 'Official Email ID', 'Official Gmail ID',
+      'Official Mail', 'Official Mail ID', 'Email', 'Gmail', 'Email ID', 'Gmail ID',
+      'Mail', 'Mail ID', 'Official ID', 'officialgmail', 'officialemail'
     ]);
 
     const rawRegNo = getRowVal(row, [
-      'Register No', 'Register Number', 'Reg No', 'regNo', 'RegisterNo', 'Roll No', 'RollNo'
+      'Register Number', 'Register No', 'Register No.', 'Reg No', 'Reg No.', 'Reg. No.',
+      'Reg.No', 'regNo', 'RegisterNo', 'Roll No', 'Roll No.', 'RollNo', 'Registration Number'
     ]);
 
     const regNo = (rawRegNo || email).toUpperCase();
@@ -344,18 +383,41 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
     ]) || email || regNo;
 
     const name = getRowVal(row, [
-      'Name', 'Student Name', 'Full Name', 'student_name'
+      'Name of the Student', 'Name', 'Student Name', 'Full Name', 'Name of Student',
+      'student_name', 'Candidate Name', 'Name of Candidate'
     ]);
 
-    const deptCode = getRowVal(row, [
-      'Department', 'Dept', 'department', 'Branch'
-    ]).toUpperCase() || 'CSE';
+    const rawClass = getRowVal(row, [
+      'Class', 'Department', 'Dept', 'department', 'Branch', 'Course'
+    ]);
+
+    let deptCode = 'CSE';
+    let yearNum = 1;
+
+    if (rawClass) {
+      const upperClass = rawClass.toUpperCase();
+      if (upperClass.includes('CSE')) deptCode = 'CSE';
+      else if (upperClass.includes('ECE')) deptCode = 'ECE';
+      else if (upperClass.includes('EEE')) deptCode = 'EEE';
+      else if (upperClass.includes('MECH')) deptCode = 'MECH';
+      else if (upperClass.includes('CIVIL')) deptCode = 'CIVIL';
+      else if (upperClass.includes('IT')) deptCode = 'IT';
+      else if (upperClass.includes('AIDS') || upperClass.includes('AI&DS')) deptCode = 'AIDS';
+      else deptCode = upperClass.replace(/[^A-Z]/g, '') || 'CSE';
+
+      if (upperClass.includes('IV') || upperClass.includes('4')) yearNum = 4;
+      else if (upperClass.includes('III') || upperClass.includes('3')) yearNum = 3;
+      else if (upperClass.includes('II') || upperClass.includes('2')) yearNum = 2;
+      else if (upperClass.includes('I') || upperClass.includes('1')) yearNum = 1;
+    }
 
     const rawPassword = getRowVal(row, [
-      'Official Password', 'Password', 'password', 'Pass', 'pwd', 'Passcode'
+      'Password', 'Official Password', 'Pass', 'pwd', 'Passcode'
     ]);
 
-    const year = Number(getRowVal(row, ['Year', 'year', 'Year of Study']) || 1);
+    const explicitYear = getRowVal(row, ['Year', 'year', 'Year of Study']);
+    if (explicitYear) yearNum = Number(explicitYear) || yearNum;
+
     const batch = getRowVal(row, ['Batch', 'batch']);
     const phone = getRowVal(row, ['Phone', 'phone', 'Mobile']);
 
@@ -383,6 +445,8 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
       deptMap[deptCode] = departmentId;
     }
 
+    const existingStudent = studentMap[regNo] || (email ? studentMap[email.toLowerCase()] : null);
+
     preparedRows.push({
       regNo,
       username,
@@ -391,14 +455,14 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
       departmentId,
       deptCode,
       rawPassword,
-      year,
+      year: yearNum,
       batch,
       phone,
-      existingStudent: studentMap[regNo]
+      existingStudent
     });
   }
 
-  // 2. Parallel password hashing for all valid rows
+  // Parallel password hashing for all valid rows
   const passwordHashes = await Promise.all(
     preparedRows.map(async (r) => {
       const pwdToHash = r.rawPassword || `${r.deptCode}${r.regNo}`;
@@ -406,7 +470,7 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
     })
   );
 
-  // 3. Assemble atomic batch payload
+  // Assemble atomic batch payload
   for (let i = 0; i < preparedRows.length; i++) {
     const r = preparedRows[i];
     const hashedPassword = passwordHashes[i];
@@ -420,9 +484,10 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
         updates.email = r.email;
         updates.officialGmail = r.email;
       }
-      if (r.username && r.username !== r.regNo) updates.username = r.username;
+      if (r.username) updates.username = r.username;
       if (r.name) updates.name = r.name;
       if (r.departmentId) updates.departmentId = r.departmentId;
+      if (r.year) updates.year = r.year;
 
       if (r.rawPassword) {
         updates.password = hashedPassword;
@@ -439,6 +504,7 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
       const newStudentId = firebaseDb.getNewKey('students');
       const studentPayload = {
         id: newStudentId,
+        _id: newStudentId,
         registerNumber: r.regNo,
         username: r.username || r.email || r.regNo,
         password: hashedPassword,
@@ -447,8 +513,8 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
         officialGmail: r.email,
         departmentId: r.departmentId,
         year: r.year,
-        batch: r.batch,
-        phone: r.phone,
+        batch: r.batch || '',
+        phone: r.phone || '',
         status: STATUS.ACTIVE,
         mustChangePassword: !r.rawPassword,
         createdAt: now,
@@ -461,10 +527,11 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
     }
   }
 
-  // 4. Record upload history doc in atomic payload
+  // Record upload history doc in atomic payload
   const uploadKey = firebaseDb.getNewKey('excel_uploads');
   atomicUpdates[`excel_uploads/${uploadKey}`] = {
     id: uploadKey,
+    _id: uploadKey,
     filename: req.file.originalname,
     totalRecords: results.total,
     successCount: results.success,
@@ -475,7 +542,7 @@ exports.uploadStudentsExcel = catchAsync(async (req, res) => {
     updatedAt: now
   };
 
-  // 5. Execute 1 SINGLE atomic network write for the entire Excel file!
+  // Execute 1 SINGLE atomic network write for the entire Excel file!
   await firebaseDb.multiUpdate(atomicUpdates);
 
   createAuditLog({

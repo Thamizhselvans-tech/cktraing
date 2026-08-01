@@ -2,10 +2,11 @@ const firebaseDb = require('../services/firebaseDb.service');
 const catchAsync = require('../utils/catchAsync');
 const { sendSuccess } = require('../utils/apiResponse');
 const { STATUS } = require('../config/constants');
+const { isSameDay, formatDateYYYYMMDD } = require('../utils/helpers');
 
 // GET admin dashboard analytics
 exports.getDashboardData = catchAsync(async (req, res) => {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const today = new Date();
 
   const [
     students,
@@ -23,7 +24,7 @@ exports.getDashboardData = catchAsync(async (req, res) => {
     firebaseDb.getAll('feedback'),
   ]);
 
-  const todayAttendance = attendanceRecords.filter(r => r.date && r.date.split('T')[0] === todayStr);
+  const todayAttendance = attendanceRecords.filter(r => isSameDay(r.date, today));
 
   const totalTodayRecords = todayAttendance.length;
   const todayPercentage =

@@ -27,6 +27,16 @@ if (!serviceAccount && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_
   };
 }
 
+// 3. Check if serviceAccountKey.json exists on disk
+const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
+if (!serviceAccount && fs.existsSync(serviceAccountPath)) {
+  try {
+    serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+  } catch (err) {
+    console.error("❌ Error loading serviceAccountKey.json:", err.message);
+  }
+}
+
 // 4. Built-in default fallback service account credentials for production deployment
 if (!serviceAccount) {
   try {

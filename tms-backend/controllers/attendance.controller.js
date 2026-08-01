@@ -1,7 +1,7 @@
 const firebaseDb = require('../services/firebaseDb.service');
 const catchAsync = require('../utils/catchAsync');
 const { sendSuccess, sendError, sendPaginated } = require('../utils/apiResponse');
-const { createAuditLog, getPagination, isToday, parseSafeDate } = require('../utils/helpers');
+const { createAuditLog, getPagination, isToday, parseSafeDate, isSameDay, formatDateYYYYMMDD } = require('../utils/helpers');
 const { AUDIT_ACTIONS, AUDIT_ENTITIES, ROLES } = require('../config/constants');
 
 // GET attendance (admin: all; coordinator: by dept/date)
@@ -18,14 +18,10 @@ exports.getAttendance = catchAsync(async (req, res) => {
     records = records.filter(r => r.studentId === student);
   }
   if (date) {
-    const targetDate = parseSafeDate(date).toISOString().split('T')[0];
-    records = records.filter(r => r.date && r.date.split('T')[0] === targetDate);
+    records = records.filter(r => isSameDay(r.date, date));
   } else if (startDate && endDate) {
-    const s = parseSafeDate(startDate);
-    const e = parseSafeDate(endDate);
     records = records.filter(r => {
-      const d = parseSafeDate(r.date);
-      return d >= s && d <= e;
+      return (isSameDay(r.date, startDate) || isSameDay(r.date, endDate) || (formatDateYYYYMMDD(r.date) >= formatDateYYYYMMDD(startDate) && formatDateYYYYMMDD(r.date) <= formatDateYYYYMMDD(endDate)));
     });
   }
 
@@ -101,10 +97,16 @@ exports.getDepartmentAttendance = catchAsync(async (req, res) => {
 
   if (!date) return sendError(res, 400, 'Date parameter is required.');
 
-  const targetDate = parseSafeDate(date).toISOString().split('T')[0];
-  let records = await firebaseDb.find('attendance', r => 
-    r.departmentId === deptId && r.date && r.date.split('T')[0] === targetDate
-  );
+  const dept = await firebaseDb.getById('departments', deptId);
+  const deptCode = dept ? dept.code?.toLowerCase() : null;
+  const deptName = dept ? dept.name?.toLowerCase() : null;
+
+  let records = await firebaseDb.find('attendance', r => {
+    const isDeptMatch = r.departmentId === deptId || 
+                        (deptCode && r.departmentId?.toLowerCase() === deptCode) ||
+                        (deptName && r.departmentId?.toLowerCase() === deptName);
+    return isDeptMatch && isSameDay(r.date, date);
+  });
 
   const students = await firebaseDb.getAll('students');
   const studentMap = {};
@@ -141,9 +143,8 @@ exports.markAttendance = catchAsync(async (req, res) => {
   const studentDoc = await firebaseDb.getById('students', student);
   if (!studentDoc) return sendError(res, 404, 'Student not found.');
 
-  const targetDate = attendanceDate.toISOString().split('T')[0];
   let existing = await firebaseDb.findOne('attendance', r => 
-    r.studentId === student && r.date && r.date.split('T')[0] === targetDate
+    r.studentId === student && isSameDay(r.date, date)
   );
 
   const morning = morningSession !== undefined ? morningSession : false;
@@ -241,11 +242,10 @@ exports.bulkMarkAttendance = catchAsync(async (req, res) => {
   const targetDate = `${year}-${month}-${day}`;
   const now = new Date().toISOString();
 
-  // 1. Single database fetch of attendance records
   const allRecords = await firebaseDb.getAll('attendance');
   const existingMap = {};
   allRecords.forEach((r) => {
-    if (r.date && r.date.split('T')[0] === targetDate) {
+    if (isSameDay(r.date, date)) {
       existingMap[r.studentId] = r;
     }
   });

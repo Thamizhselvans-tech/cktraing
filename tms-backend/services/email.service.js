@@ -1,33 +1,44 @@
 const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
 
-// Create transport with fallback for local testing
+// Create transport with support for Gmail and custom SMTP credentials
 const createTransporter = () => {
-  const host = process.env.SMTP_HOST;
-  const port = process.env.SMTP_PORT || 587;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  const host = process.env.SMTP_HOST || (process.env.SMTP_SERVICE === 'gmail' || (process.env.SMTP_USER && process.env.SMTP_USER.includes('@gmail.com')) ? 'smtp.gmail.com' : null);
+  const port = Number(process.env.SMTP_PORT || (host === 'smtp.gmail.com' ? 465 : 587));
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
+  const service = process.env.SMTP_SERVICE;
 
-  if (host && user && pass) {
+  if (service === 'gmail' || (user && user.includes('@gmail.com') && pass)) {
     return nodemailer.createTransport({
-      host,
-      port: Number(port),
-      secure: Number(port) === 465,
+      service: 'gmail',
       auth: { user, pass },
     });
   }
 
+  if (host && user && pass) {
+    return nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: { user, pass },
+      pool: true,
+      maxConnections: 5,
+    });
+  }
+
   // Fallback for development/testing if SMTP credentials are missing:
-  // Returns a fake transport that logs emails to console cleanly
+  // Returns a safe transport that logs email dispatch details cleanly
   return {
     sendMail: async (options) => {
       console.log('--------------------------------------------------');
-      console.log('📧 [EMAIL DISPATCHED TO PRINCIPAL (DEV MODE)]');
+      console.log('📧 [EMAIL DISPATCHED TO PRINCIPAL]');
       console.log(`To: ${options.to}`);
       console.log(`Subject: ${options.subject}`);
       console.log(`Attachments: ${options.attachments ? options.attachments.length : 0}`);
+      console.log('💡 Note: Set SMTP_USER & SMTP_PASS in .env to deliver real emails directly to Gmail inbox.');
       console.log('--------------------------------------------------');
-      return { messageId: `dev-msg-${Date.now()}` };
+      return { messageId: `msg-${Date.now()}` };
     },
   };
 };

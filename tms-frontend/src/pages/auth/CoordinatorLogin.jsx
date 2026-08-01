@@ -88,7 +88,7 @@ export default function CoordinatorLogin() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="input-group">
-              <label htmlFor="coordinator-username" className="input-label">Username</label>
+              <label htmlFor="coordinator-username" className="input-label">Username / Department Code</label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-500 pointer-events-none">
                   <User size={16} />
@@ -99,7 +99,7 @@ export default function CoordinatorLogin() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter coordinator username"
+                  placeholder="Enter username (e.g. CSE@104CSE, coord_cse)"
                   className="input-field pl-10"
                   autoComplete="username"
                   required
