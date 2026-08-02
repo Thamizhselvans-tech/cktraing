@@ -78,6 +78,7 @@ app.use(cookieParser());
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api', routes);
+app.use('/', routes);
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
 app.use(notFound);
