@@ -28,7 +28,7 @@ export const AuthProvider = ({ children }) => {
     // Background container pre-warm ping to wake up backend Render instance
     const pingUrl = import.meta.env.VITE_API_URL
       ? `${import.meta.env.VITE_API_URL.replace(/\/api$/, '')}/health`
-      : 'https://tms-backend-y2k0.onrender.com/health';
+      : '/health';
     fetch(pingUrl).catch(() => {});
   }, [fetchUser]);
 
